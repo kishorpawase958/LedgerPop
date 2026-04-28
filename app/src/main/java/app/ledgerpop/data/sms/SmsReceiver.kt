@@ -1,0 +1,63 @@
+package app.ledgerpop.data.sms
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.provider.Telephony
+import app.ledgerpop.data.local.LedgerPopDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+class SmsReceiver : BroadcastReceiver() {
+
+    private val job = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.IO + job)
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+
+        val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        if (messages.isNullOrEmpty()) return
+
+        val grouped = messages.groupBy { it.originatingAddress ?: "" }
+
+        val db = LedgerPopDatabase.getInstance(context)
+        val dao = db.smsTransactionDao()
+        val auditDao = db.smsAuditDao()
+
+        val pendingResult = goAsync()
+
+        scope.launch {
+            try {
+                grouped.forEach { (sender, parts) ->
+                    if (sender.isBlank()) return@forEach
+
+                    val fullBody = parts.joinToString("") { it.messageBody ?: "" }
+                    val timestamp = parts.first().timestampMillis
+
+                    val msg = SmsMessage(
+                        sender = sender,
+                        body = fullBody,
+                        timestamp = timestamp
+                    )
+
+                    val importer = SmsImporter(
+                        smsReader = NoOpSmsReader(),
+                        dao = dao,
+                        auditDao = auditDao
+                    )
+
+                    importer.importSingle(msg)
+                }
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+}
+
+class NoOpSmsReader : SmsReader(contentResolver = null) {
+    override fun readTransactionSms(): List<SmsMessage> = emptyList()
+}
