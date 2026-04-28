@@ -32,6 +32,9 @@ interface SmsAuditDao {
     """)
     suspend fun updateReport(id: Int, reportType: String, note: String)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(audits: List<SmsAuditEntity>)
+
     @Query("SELECT COUNT(*) FROM sms_audit WHERE hashKey = :hashKey")
     suspend fun exists(hashKey: String): Int
 

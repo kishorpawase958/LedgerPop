@@ -12,9 +12,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryAccountPicker(
     title: String,
@@ -25,95 +27,123 @@ fun CategoryAccountPicker(
 ) {
     var newValue by remember { mutableStateOf("") }
 
-    ModalBottomSheet(
+    Dialog(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Column(
+        Surface(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
+                .fillMaxWidth(0.9f)
+                .wrapContentHeight()
+                .clip(RoundedCornerShape(28.dp)),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            tonalElevation = 6.dp
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            // Add new entry row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
             ) {
-                OutlinedTextField(
-                    value = newValue,
-                    onValueChange = { newValue = it },
-                    placeholder = { Text("Add new…") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
-                FilledTonalButton(
-                    onClick = {
-                        val trimmed = newValue.trim()
-                        if (trimmed.isNotEmpty()) {
-                            onSelect(trimmed)
-                            onDismiss()
-                        }
-                    },
-                    contentPadding = PaddingValues(horizontal = 12.dp)
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Add")
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(4.dp))
-
-            val allOptions = options.filter { it.isNotBlank() }.distinct()
-
-            if (allOptions.isEmpty()) {
                 Text(
-                    text = "No existing options yet",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 16.dp)
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
-            } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                    items(allOptions) { option ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onSelect(option)
-                                    onDismiss()
-                                }
-                                .padding(vertical = 14.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = option,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                            if (option == selected) {
-                                Icon(
-                                    Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+
+                // Add new entry row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newValue,
+                        onValueChange = { newValue = it },
+                        placeholder = { Text("Add new…") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    FilledTonalIconButton(
+                        onClick = {
+                            val trimmed = newValue.trim()
+                            if (trimmed.isNotEmpty()) {
+                                onSelect(trimmed)
+                                onDismiss()
                             }
                         }
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = "Add")
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                Spacer(Modifier.height(8.dp))
+
+                val allOptions = options.filter { it.isNotBlank() }.distinct()
+
+                if (allOptions.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No existing options yet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                        items(allOptions) { option ->
+                            Column {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            onSelect(option)
+                                            onDismiss()
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = option,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (option == selected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (option == selected) {
+                                        Icon(
+                                            Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                if (option != allOptions.last()) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f),
+                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Close")
                 }
             }
         }

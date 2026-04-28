@@ -1,8 +1,8 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlinAndroid)
+    alias(libs.plugins.kotlinCompose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -14,8 +14,8 @@ android {
         minSdk = 31
         //noinspection OldTargetApi
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2           // ← increase by 1 from last time (was 1)
+        versionName = "1.0.5"     // ← change from "1.0.0" to "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -55,8 +55,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.compose.material.icons)
+    implementation(libs.haze)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)

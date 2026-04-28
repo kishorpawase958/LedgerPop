@@ -1,12 +1,17 @@
 package app.ledgerpop.ui.viewmodel
 
-import android.content.ContentResolver
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.sms.SmsImporter
 import app.ledgerpop.data.sms.SmsReader
+import app.ledgerpop.ui.state.AppTheme
 import app.ledgerpop.ui.state.SettingsUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,19 +21,26 @@ import kotlinx.coroutines.launch
 
 class SettingsViewModel(
     private val db: LedgerPopDatabase,
-    contentResolver: ContentResolver
+    context: Context
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(SettingsUiState())
+    private val appContext = context.applicationContext
+    private val sharedPrefs = appContext.getSharedPreferences("ledgerpop_prefs", Context.MODE_PRIVATE)
+
+    private val _uiState = MutableStateFlow(SettingsUiState(
+        appTheme = AppTheme.valueOf(sharedPrefs.getString("app_theme", AppTheme.AUTO.name) ?: AppTheme.AUTO.name)
+    ))
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     private val smsImporter = SmsImporter(
-        SmsReader(contentResolver),
+        appContext,
+        SmsReader(appContext),
         db.smsTransactionDao(),
         db.smsAuditDao()
     )
 
     init {
+        refreshPermissions()
         // Observe transaction count
         viewModelScope.launch {
             db.smsTransactionDao().getAllTransactions().collect { list ->
@@ -37,14 +49,30 @@ class SettingsViewModel(
         }
     }
 
+    fun updateTheme(theme: AppTheme) {
+        sharedPrefs.edit().putString("app_theme", theme.name).apply()
+        _uiState.update { it.copy(appTheme = theme) }
+    }
+
+    fun refreshPermissions() {
+        val readGranted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        val receiveGranted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        _uiState.update { it.copy(
+            hasReadSmsPermission = readGranted,
+            hasReceiveSmsPermission = receiveGranted
+        ) }
+    }
+
     fun importSms() {
+        if (!uiState.value.hasReadSmsPermission) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isImporting = true, lastImportMessage = "") }
+            _uiState.update { it.copy(isImporting = true, lastImportMessage = "", lastImportResult = null) }
             try {
-                val count = smsImporter.importInbox()
+                val result = smsImporter.importInbox()
                 _uiState.update { it.copy(
                     isImporting = false,
-                    lastImportMessage = "Imported $count new transactions."
+                    lastImportResult = result,
+                    lastImportMessage = "Imported ${result.imported} new transactions."
                 ) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(
@@ -56,18 +84,20 @@ class SettingsViewModel(
     }
 
     fun importSmsWithDateRange() {
+        if (!uiState.value.hasReadSmsPermission) return
         val from = uiState.value.dateRangeFromMillis
         val to = uiState.value.dateRangeToMillis
 
         if (from == null || to == null) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isImporting = true, lastImportMessage = "") }
+            _uiState.update { it.copy(isImporting = true, lastImportMessage = "", lastImportResult = null) }
             try {
-                val count = smsImporter.importInbox(fromMillis = from, toMillis = to)
+                val result = smsImporter.importInbox(fromMillis = from, toMillis = to)
                 _uiState.update { it.copy(
                     isImporting = false,
-                    lastImportMessage = "Imported $count new transactions from the selected range."
+                    lastImportResult = result,
+                    lastImportMessage = "Imported ${result.imported} new transactions from the selected range."
                 ) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(
@@ -79,6 +109,7 @@ class SettingsViewModel(
     }
 
     fun showDateRangePicker() {
+        if (!uiState.value.hasReadSmsPermission) return
         _uiState.update { it.copy(showDateRangePicker = true) }
     }
 
@@ -98,6 +129,14 @@ class SettingsViewModel(
         _uiState.update { it.copy(dateRangeFromMillis = null, dateRangeToMillis = null) }
     }
 
+    fun updateUserName(newName: String) {
+        _uiState.update { it.copy(userName = newName) }
+    }
+
+    fun clearImportResult() {
+        _uiState.update { it.copy(lastImportResult = null) }
+    }
+
     fun deleteAll() {
         viewModelScope.launch {
             _uiState.update { it.copy(isClearing = true) }
@@ -111,12 +150,20 @@ class SettingsViewModel(
         }
     }
 
+    fun backupData(context: Context) {
+        // Implementation for backup
+    }
+
+    fun restoreData(context: Context, uri: Uri?) {
+        // Implementation for restore
+    }
+
     companion object {
-        fun factory(db: LedgerPopDatabase, contentResolver: ContentResolver): ViewModelProvider.Factory =
+        fun factory(db: LedgerPopDatabase, context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return SettingsViewModel(db, contentResolver) as T
+                    return SettingsViewModel(db, context) as T
                 }
             }
     }

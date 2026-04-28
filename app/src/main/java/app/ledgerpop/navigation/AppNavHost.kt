@@ -1,65 +1,36 @@
 package app.ledgerpop.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import app.ledgerpop.Screen
-import app.ledgerpop.screens.analytics.AnalyticsScreen
-import app.ledgerpop.screens.home.HomeScreen
 import app.ledgerpop.screens.settings.PermissionsScreen
 import app.ledgerpop.screens.settings.SettingsScreen
 import app.ledgerpop.screens.settings.SmsAuditScreen
-import app.ledgerpop.screens.transactions.TransactionsScreen
 
 @Composable
-fun AppNavHost() {
-    val navController = rememberNavController()
-
-    NavHost(
-        navController = navController,
-        startDestination = Screen.Home.route
-    ) {
-        composable(Screen.Home.route) {
-            HomeScreen(
-                onNavigateToTransactions = {
-                    navController.navigate(Screen.Transactions.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            )
+fun AppNavHost(navController: NavHostController) {
+    NavHost(navController, startDestination = "home") {
+        composable("home") {
+            // Home screen
         }
 
-        composable(Screen.Transactions.route) {
-            TransactionsScreen()
-        }
-
-        composable(Screen.Analytics.route) {
-            AnalyticsScreen()
-        }
-
-        composable(Screen.Settings.route) {
+        composable("settings") {
             SettingsScreen(
-                onNavigateToAudit = {
-                    navController.navigate(Screen.SmsAudit.route)
-                },
-                onNavigateToPermissions = {
-                    navController.navigate(Screen.Permissions.route)
-                }
+                onNavigateToPermissions = { navController.navigate("permissions") },
+                onNavigateToSmsAudit = { navController.navigate("sms_audit") }
             )
         }
 
-        composable(Screen.SmsAudit.route) {
-            SmsAuditScreen(
+        composable("permissions") {
+            PermissionsScreen(
                 onBack = { navController.popBackStack() }
             )
         }
 
-        composable(Screen.Permissions.route) {
-            PermissionsScreen(
+        // SMS Audit route (reuses existing screen)
+        composable("sms_audit") {
+            SmsAuditScreen(
                 onBack = { navController.popBackStack() }
             )
         }

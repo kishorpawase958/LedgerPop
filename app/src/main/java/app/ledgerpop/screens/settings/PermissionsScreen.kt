@@ -6,50 +6,20 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.Message
-import androidx.compose.material.icons.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.rounded.Message
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,162 +27,130 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.ledgerpop.data.local.LedgerPopDatabase
+import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PermissionsScreen(
-    onBack: () -> Unit
-) {
+fun PermissionsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val db = remember { LedgerPopDatabase.getInstance(context) }
+    val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(db, context))
+    val uiState by viewModel.uiState.collectAsState()
 
-    fun isGranted(permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context,
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
+    val readLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        viewModel.refreshPermissions()
+        if (granted) Toast.makeText(context, "Access Granted", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(context, "Access Denied", Toast.LENGTH_SHORT).show()
     }
 
-    var smsGranted by remember { mutableStateOf(false) }
-
-    fun refreshStates() {
-        smsGranted = isGranted(Manifest.permission.READ_SMS)
+    val receiveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        viewModel.refreshPermissions()
+        if (granted) Toast.makeText(context, "Access Granted", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(context, "Access Denied", Toast.LENGTH_SHORT).show()
     }
 
-    val smsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {
-        refreshStates()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissions()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-
-    LaunchedEffect(Unit) {
-        refreshStates()
-    }
-
-    val isLegacyStoragePermissionApplicable = Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = "Permissions",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
+                title = { Text("Permissions", fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } }
             )
-        },
-        modifier = Modifier.fillMaxSize()
-    ) { innerPadding ->
+        }
+    ) { padding ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(innerPadding)
+                .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Manage the access LedgerPop needs for SMS parsing and CSV files.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Manage app permissions", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             PermissionCard(
-                icon = Icons.Rounded.Message,
-                title = "SMS Access",
-                description = "Needed to scan bank and payment messages and create transactions automatically.",
-                statusText = if (smsGranted) "Permission granted" else "Permission not granted",
-                granted = smsGranted,
-                buttonText = if (smsGranted) "Granted" else "Grant SMS Permission",
-                buttonEnabled = !smsGranted,
-                onClick = {
-                    if (!smsGranted) {
-                        smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
+                icon = Icons.AutoMirrored.Rounded.Message,
+                title = "Read SMS",
+                desc = "Scan bank messages for transactions",
+                status = if (uiState.hasReadSmsPermission) "✓ Granted" else "Access required",
+                granted = uiState.hasReadSmsPermission,
+                buttonText = if (uiState.hasReadSmsPermission) "Revoke Access" else "Grant Access",
+                onAction = {
+                    if (uiState.hasReadSmsPermission) {
+                        revokePermission(context, Manifest.permission.READ_SMS)
+                    } else {
+                        readLauncher.launch(Manifest.permission.READ_SMS)
                     }
                 }
             )
 
             PermissionCard(
-                icon = Icons.Rounded.Folder,
-                title = "Storage Access",
-                description = if (isLegacyStoragePermissionApplicable) {
-                    "CSV import and export use Android's file access flow. On some older Android versions, storage-related access may still be involved depending on device behavior."
-                } else {
-                    "CSV import and export use the Android system file picker, so no separate storage runtime permission is required on this Android version."
-                },
-                statusText = if (isLegacyStoragePermissionApplicable) {
-                    "Handled through Android file access"
-                } else {
-                    "No runtime storage permission required"
-                },
-                granted = true,
-                buttonText = "Not Required",
-                buttonEnabled = false,
-                onClick = {}
+                icon = Icons.Rounded.Sms,
+                title = "Receive SMS",
+                desc = "Real-time SMS detection",
+                status = if (uiState.hasReceiveSmsPermission) "✓ Granted" else "Access required",
+                granted = uiState.hasReceiveSmsPermission,
+                buttonText = if (uiState.hasReceiveSmsPermission) "Revoke Access" else "Grant Access",
+                onAction = {
+                    if (uiState.hasReceiveSmsPermission) {
+                        revokePermission(context, Manifest.permission.RECEIVE_SMS)
+                    } else {
+                        if (uiState.hasReadSmsPermission) {
+                            receiveLauncher.launch(Manifest.permission.RECEIVE_SMS)
+                        } else {
+                            Toast.makeText(context, "Please grant 'Read SMS' permission first", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
             )
 
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+            // Storage is usually handled by SAF or simple picker nowadays, keeping as placeholder
+            PermissionCard(
+                icon = Icons.Rounded.Folder,
+                title = "Storage",
+                desc = "CSV import/export uses system picker",
+                status = "✓ System handled",
+                granted = true,
+                buttonText = "Revoke Access",
+                enabled = false,
+                onAction = {}
+            )
+
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Lock,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.size(10.dp))
-                        Text(
-                            text = "Privacy",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Icon(Icons.Rounded.Lock, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Privacy", fontWeight = FontWeight.SemiBold)
                     }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(
-                        text = "LedgerPop keeps your financial data on-device and only asks for permissions that support SMS parsing and file import or export.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    OutlinedButton(
+                    Spacer(Modifier.height(8.dp))
+                    Text("Data stays on your device", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(
                         onClick = {
-                            val intent = Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.fromParts("package", context.packageName, null)
-                            )
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", context.packageName, null)
+                            }
                             context.startActivity(intent)
-                        }
+                        },
+                        Modifier.fillMaxWidth().padding(top = 12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.OpenInNew,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text("Open App Settings")
+                        Text("App Settings")
                     }
                 }
             }
@@ -220,103 +158,68 @@ fun PermissionsScreen(
     }
 }
 
+private fun revokePermission(context: android.content.Context, permission: String) {
+    Toast.makeText(context, "Access Revoked", Toast.LENGTH_SHORT).show()
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.revokeSelfPermissionOnKill(permission)
+    } else {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+        }
+        context.startActivity(intent)
+    }
+}
+
 @Composable
 private fun PermissionCard(
     icon: ImageVector,
     title: String,
-    description: String,
-    statusText: String,
+    desc: String,
+    status: String,
     granted: Boolean,
     buttonText: String,
-    buttonEnabled: Boolean,
-    onClick: () -> Unit
+    enabled: Boolean = true,
+    onAction: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        )
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier
+                    Modifier
                         .size(42.dp)
                         .background(
-                            color = if (granted) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                            } else {
-                                MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
-                            },
-                            shape = RoundedCornerShape(12.dp)
+                            if (granted) MaterialTheme.colorScheme.primary.copy(0.12f)
+                            else MaterialTheme.colorScheme.error.copy(0.12f),
+                            RoundedCornerShape(12.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = if (granted) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        }
+                        icon,
+                        null,
+                        tint = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
                 }
-
-                Spacer(modifier = Modifier.size(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (granted) {
-                                Icons.Rounded.CheckCircle
-                            } else {
-                                Icons.Rounded.WarningAmber
-                            },
-                            contentDescription = null,
-                            tint = if (granted) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.size(6.dp))
-                        Text(
-                            text = statusText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (granted) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            }
-                        )
-                    }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Text(status, color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(4.dp))
+                    Text(desc, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             Button(
-                onClick = onClick,
-                enabled = buttonEnabled
+                onClick = onAction,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                colors = if (granted) ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                ) else ButtonDefaults.buttonColors()
             ) {
                 Text(buttonText)
             }

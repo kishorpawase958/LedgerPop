@@ -13,16 +13,11 @@ import app.ledgerpop.ui.state.AnalyticsUiState
 import app.ledgerpop.ui.state.CategorySummary
 import app.ledgerpop.ui.state.GroupingType
 import app.ledgerpop.ui.state.TrendSummary
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 sealed class DrillDownType {
     object Income : DrillDownType()
@@ -31,165 +26,69 @@ sealed class DrillDownType {
     data class Trend(val label: String) : DrillDownType()
 }
 
+private data class AnalyticsFilters(
+    val start: Long?,
+    val end: Long?,
+    val groupBy: GroupingType,
+    val category: String,
+    val account: String
+)
+
 class AnalyticsViewModel(
     private val repository: TransactionRepository
 ) : ViewModel() {
 
-    // FIX: Set default grouping type to DAILY
-    private val _uiState = MutableStateFlow(AnalyticsUiState(groupBy = GroupingType.DAILY))
-    val uiState: StateFlow<AnalyticsUiState> = _uiState.asStateFlow()
+    private val _startDateMillis = MutableStateFlow<Long?>(null)
+    private val _endDateMillis = MutableStateFlow<Long?>(null)
+    private val _groupBy = MutableStateFlow(GroupingType.DAILY)
+    private val _selectedCategory = MutableStateFlow("All")
+    private val _selectedAccount = MutableStateFlow("All")
 
-    private val _drillDownTransactions = MutableStateFlow<List<SmsTransactionEntity>?>(null)
-    val drillDownTransactions: StateFlow<List<SmsTransactionEntity>?> = _drillDownTransactions.asStateFlow()
+    private val formats = mapOf(
+        GroupingType.DAILY to SimpleDateFormat("dd MMM", Locale.getDefault()),
+        GroupingType.WEEKLY to SimpleDateFormat("'W'W, MMM yy", Locale.getDefault()),
+        GroupingType.MONTHLY to SimpleDateFormat("MMM yy", Locale.getDefault())
+    )
 
-    private val _drillDownTitle = MutableStateFlow("")
-    val drillDownTitle: StateFlow<String> = _drillDownTitle.asStateFlow()
-
-    private var allTransactionsList: List<SmsTransactionEntity> = emptyList()
-
-    init {
-        viewModelScope.launch {
-            repository.getAllTransactions().collect { allTxns ->
-                allTransactionsList = allTxns.filter { it.isBillable }
-
-                val cats = listOf("All") + allTransactionsList.map { it.category.ifBlank { "Other" } }.distinct().sorted()
-                val accs = listOf("All") + allTransactionsList.map { it.accountHint.ifBlank { "Unknown" } }.distinct().sorted()
-
-                _uiState.update { state ->
-                    state.copy(
-                        availableCategories = cats,
-                        availableAccounts = accs
-                    )
-                }
-
-                processAnalytics()
-            }
-        }
+    private val filters = combine(
+        _startDateMillis,
+        _endDateMillis,
+        _groupBy,
+        _selectedCategory,
+        _selectedAccount
+    ) { start, end, groupBy, category, account ->
+        AnalyticsFilters(start, end, groupBy, category, account)
     }
 
-    // ── Filter Updates ────────────────────────────────────────────────────────
+    val uiState: StateFlow<AnalyticsUiState> = combine(
+        repository.getAllTransactions(),
+        filters
+    ) { allTxns, f ->
+        val billableTxns = allTxns.filter { it.isBillable }
+        
+        val cats = listOf("All") + billableTxns.map { it.category.ifBlank { "Other" } }.distinct().sorted()
+        val accs = listOf("All") + billableTxns.map { it.accountHint.ifBlank { "Unknown" } }.distinct().sorted()
 
-    fun setDateRange(start: Long?, end: Long?) {
-        _uiState.update { it.copy(startDateMillis = start, endDateMillis = end) }
-        processAnalytics()
-    }
-
-    fun setGroupingType(type: GroupingType) {
-        _uiState.update { it.copy(groupBy = type) }
-        processAnalytics()
-    }
-
-    fun setCategoryFilter(category: String) {
-        _uiState.update { it.copy(selectedCategory = category) }
-        processAnalytics()
-    }
-
-    fun setAccountFilter(account: String) {
-        _uiState.update { it.copy(selectedAccount = account) }
-        processAnalytics()
-    }
-
-    fun clearFilters() {
-        _uiState.update {
-            it.copy(
-                startDateMillis = null,
-                endDateMillis = null,
-                selectedCategory = "All",
-                selectedAccount = "All",
-                groupBy = GroupingType.DAILY // Reset to Daily
-            )
-        }
-        processAnalytics()
-    }
-
-    // ── Drill Down Logic ──────────────────────────────────────────────────────
-
-    fun openDrillDown(type: DrillDownType) {
-        val currentTxns = _uiState.value.filteredTransactions
-
-        when (type) {
-            is DrillDownType.Income -> {
-                _drillDownTitle.value = "Income Details"
-                _drillDownTransactions.value = currentTxns.filter { it.type == "CREDIT" }
-            }
-            is DrillDownType.Expense -> {
-                _drillDownTitle.value = "Expense Details"
-                _drillDownTransactions.value = currentTxns.filter { it.type == "DEBIT" }
-            }
-            is DrillDownType.Category -> {
-                _drillDownTitle.value = "${type.categoryName} Expenses"
-                _drillDownTransactions.value = currentTxns.filter {
-                    it.type == "DEBIT" && it.category.ifBlank { "Other" } == type.categoryName
-                }
-            }
-            is DrillDownType.Trend -> {
-                _drillDownTitle.value = "Details for ${type.label}"
-
-                val trendFormat = when (_uiState.value.groupBy) {
-                    GroupingType.DAILY -> SimpleDateFormat("dd MMM", Locale.getDefault())
-                    GroupingType.WEEKLY -> SimpleDateFormat("'W'W, MMM yy", Locale.getDefault())
-                    GroupingType.MONTHLY -> SimpleDateFormat("MMM yy", Locale.getDefault())
-                }
-
-                _drillDownTransactions.value = currentTxns.filter {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                    trendFormat.format(cal.time) == type.label
-                }
-            }
-        }
-    }
-
-    fun closeDrillDown() {
-        _drillDownTransactions.value = null
-        _drillDownTitle.value = ""
-    }
-
-    // ── Core Processing Logic ─────────────────────────────────────────────────
-
-    private fun processAnalytics() {
-        val state = _uiState.value
-        var filteredTxns = allTransactionsList
-
-        if (state.startDateMillis != null) {
-            filteredTxns = filteredTxns.filter { it.transactionTime >= state.startDateMillis }
-        }
-        if (state.endDateMillis != null) {
-            val endOfDay = state.endDateMillis + 86400000L - 1
-            filteredTxns = filteredTxns.filter { it.transactionTime <= endOfDay }
-        }
-        if (state.selectedCategory != "All") {
-            filteredTxns = filteredTxns.filter { it.category.ifBlank { "Other" } == state.selectedCategory }
-        }
-        if (state.selectedAccount != "All") {
-            filteredTxns = filteredTxns.filter { it.accountHint.ifBlank { "Unknown" } == state.selectedAccount }
-        }
+        var filteredTxns = billableTxns
+        if (f.start != null) filteredTxns = filteredTxns.filter { it.transactionTime >= f.start }
+        if (f.end != null) filteredTxns = filteredTxns.filter { it.transactionTime <= (f.end + 86400000L - 1) }
+        if (f.category != "All") filteredTxns = filteredTxns.filter { it.category.ifBlank { "Other" } == f.category }
+        if (f.account != "All") filteredTxns = filteredTxns.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
 
         val income = filteredTxns.filter { it.type == "CREDIT" }.sumOf { it.amount }
         val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
         val debits = filteredTxns.filter { it.type == "DEBIT" }
         val avg = if (debits.isNotEmpty()) debits.sumOf { it.amount } / debits.size else 0.0
 
-        val trendFormat = when (state.groupBy) {
-            GroupingType.DAILY -> SimpleDateFormat("dd MMM", Locale.getDefault())
-            GroupingType.WEEKLY -> SimpleDateFormat("'W'W, MMM yy", Locale.getDefault())
-            GroupingType.MONTHLY -> SimpleDateFormat("MMM yy", Locale.getDefault())
-        }
-
+        val trendFormat = formats[f.groupBy]!!
         val trendSummaries = filteredTxns
             .groupBy {
                 val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
                 trendFormat.format(cal.time)
             }
-            .entries
-            .sortedBy { entry ->
-                filteredTxns
-                    .filter {
-                        val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                        trendFormat.format(cal.time) == entry.key
-                    }
-                    .minOf { it.transactionTime }
-            }
-            .takeLast(if (state.groupBy == GroupingType.DAILY) 14 else 12)
+            .map { (label, txns) -> label to txns }
+            .sortedBy { (_, txns) -> txns.minOf { it.transactionTime } }
+            .takeLast(if (f.groupBy == GroupingType.DAILY) 14 else 12)
             .map { (label, txns) ->
                 TrendSummary(
                     label = label,
@@ -210,19 +109,85 @@ class AnalyticsViewModel(
             }
             .sortedByDescending { it.amount }
 
-        _uiState.update {
-            it.copy(
-                totalIncome = income,
-                totalExpense = expense,
-                net = income - expense,
-                transactionCount = filteredTxns.size,
-                avgDebit = avg,
-                trendSummaries = trendSummaries,
-                categoryBreakdown = categoryBreakdown,
-                filteredTransactions = filteredTxns.sortedByDescending { t -> t.transactionTime },
-                isLoading = false
-            )
+        AnalyticsUiState(
+            totalIncome = income,
+            totalExpense = expense,
+            net = income - expense,
+            transactionCount = filteredTxns.size,
+            avgDebit = avg,
+            trendSummaries = trendSummaries,
+            categoryBreakdown = categoryBreakdown,
+            isLoading = false,
+            startDateMillis = f.start,
+            endDateMillis = f.end,
+            groupBy = f.groupBy,
+            selectedCategory = f.category,
+            selectedAccount = f.account,
+            availableCategories = cats,
+            availableAccounts = accs,
+            filteredTransactions = filteredTxns.sortedByDescending { it.transactionTime }
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = AnalyticsUiState(isLoading = true)
+    )
+
+    private val _drillDownTransactions = MutableStateFlow<List<SmsTransactionEntity>?>(null)
+    val drillDownTransactions: StateFlow<List<SmsTransactionEntity>?> = _drillDownTransactions.asStateFlow()
+
+    private val _drillDownTitle = MutableStateFlow("")
+    val drillDownTitle: StateFlow<String> = _drillDownTitle.asStateFlow()
+
+    fun setDateRange(start: Long?, end: Long?) {
+        _startDateMillis.value = start
+        _endDateMillis.value = end
+    }
+
+    fun setGroupingType(type: GroupingType) { _groupBy.value = type }
+    fun setCategoryFilter(category: String) { _selectedCategory.value = category }
+    fun setAccountFilter(account: String) { _selectedAccount.value = account }
+
+    fun clearFilters() {
+        _startDateMillis.value = null
+        _endDateMillis.value = null
+        _selectedCategory.value = "All"
+        _selectedAccount.value = "All"
+        _groupBy.value = GroupingType.DAILY
+    }
+
+    fun openDrillDown(type: DrillDownType) {
+        val currentTxns = uiState.value.filteredTransactions
+
+        when (type) {
+            is DrillDownType.Income -> {
+                _drillDownTitle.value = "Income Details"
+                _drillDownTransactions.value = currentTxns.filter { it.type == "CREDIT" }
+            }
+            is DrillDownType.Expense -> {
+                _drillDownTitle.value = "Expense Details"
+                _drillDownTransactions.value = currentTxns.filter { it.type == "DEBIT" }
+            }
+            is DrillDownType.Category -> {
+                _drillDownTitle.value = "${type.categoryName} Expenses"
+                _drillDownTransactions.value = currentTxns.filter {
+                    it.type == "DEBIT" && it.category.ifBlank { "Other" } == type.categoryName
+                }
+            }
+            is DrillDownType.Trend -> {
+                _drillDownTitle.value = "Details for ${type.label}"
+                val trendFormat = formats[uiState.value.groupBy]!!
+                _drillDownTransactions.value = currentTxns.filter {
+                    val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
+                    trendFormat.format(cal.time) == type.label
+                }
+            }
         }
+    }
+
+    fun closeDrillDown() {
+        _drillDownTransactions.value = null
+        _drillDownTitle.value = ""
     }
 
     // ── Export Logic ──────────────────────────────────────────────────────────
@@ -230,7 +195,8 @@ class AnalyticsViewModel(
     fun exportToCsv(context: Context) {
         viewModelScope.launch {
             try {
-                val txns = _uiState.value.filteredTransactions
+                val state = uiState.value
+                val txns = state.filteredTransactions
                 if (txns.isEmpty()) return@launch
 
                 val csvHeader = "DATE,TIME,MERCHANT,AMOUNT,DR/CR,ACCOUNT,EXPENSE,INCOME,CATEGORY,NOTE\n"
@@ -259,8 +225,7 @@ class AnalyticsViewModel(
                 }
 
                 val fileDateFormatter = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-                val state = _uiState.value
-
+                
                 val startMillis = state.startDateMillis ?: txns.minOf { it.transactionTime }
                 val endMillis = state.endDateMillis ?: txns.maxOf { it.transactionTime }
 

@@ -194,11 +194,6 @@ fun HomeScreen(
                         onClick = { selectedTxn = txn },
                         onCategoryClick = { quickCategoryTxn = txn }
                     )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                    )
                 }
             }
         }
@@ -208,7 +203,9 @@ fun HomeScreen(
             onClick = { showAddSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(20.dp),
+                .padding(end = 20.dp, bottom = 125.dp),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
             text = { Text("Add") }
         )
@@ -271,6 +268,9 @@ private fun HomeTransactionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
             .clickable { onClick() }
             .alpha(if (isBillable) 1f else 0.45f)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -679,6 +679,7 @@ fun QuickCategoryUpdateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Text(
                 text = "Update Category",

@@ -1,13 +1,24 @@
 package app.ledgerpop.data.sms
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import app.ledgerpop.data.local.SmsAuditDao
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.data.local.SmsTransactionDao
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.parser.SmsParser
 
+data class ImportResult(
+    val imported: Int = 0,
+    val failed: Int = 0,
+    val skipped: Int = 0
+)
+
 class SmsImporter(
+    private val context: Context,
     private val smsReader: SmsReader,
     private val dao: SmsTransactionDao,
     private val auditDao: SmsAuditDao
@@ -18,24 +29,111 @@ class SmsImporter(
     suspend fun importInbox(
         fromMillis: Long? = null,
         toMillis: Long? = null
-    ): Int {
-        val messages = smsReader.readTransactionSms()
+    ): ImportResult {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Permission READ_SMS not granted. Aborting import.")
+            return ImportResult()
+        }
 
+        val messages = smsReader.readTransactionSms()
         Log.d(TAG, "Total SMS read from inbox: ${messages.size}")
 
-        var importedCount = 0
+        val transactionsToInsert = mutableListOf<SmsTransactionEntity>()
+        val auditToInsert = mutableListOf<SmsAuditEntity>()
+
+        var imported = 0
+        var failed = 0
+        var skipped = 0
 
         for (msg in messages) {
             if (fromMillis != null && msg.timestamp < fromMillis) continue
             if (toMillis != null && msg.timestamp > toMillis) continue
 
-            importSingle(msg)?.let {
-                importedCount++
+            val shouldProcess = SmsFilter.shouldProcess(msg.sender, msg.body)
+            val reason = SmsFilter.skipReason(msg.sender, msg.body)
+
+            if (!shouldProcess) {
+                val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
+                auditToInsert.add(
+                    SmsAuditEntity(
+                        sender = msg.sender,
+                        body = msg.body,
+                        timestamp = msg.timestamp,
+                        status = "SKIPPED",
+                        skipReason = reason,
+                        parsedAmount = 0.0,
+                        parsedType = "",
+                        hashKey = hashKey
+                    )
+                )
+                skipped++
+                continue
             }
+
+            val parsed = app.ledgerpop.data.parser.SmsParser.parse(msg.sender, msg.body)
+            if (parsed == null) {
+                val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
+                auditToInsert.add(
+                    SmsAuditEntity(
+                        sender = msg.sender,
+                        body = msg.body,
+                        timestamp = msg.timestamp,
+                        status = "PARSE_FAILED",
+                        skipReason = "Parser returned null",
+                        parsedAmount = 0.0,
+                        parsedType = "",
+                        hashKey = hashKey
+                    )
+                )
+                failed++
+                continue
+            }
+
+            val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type)
+            if (dao.exists(hashKey) > 0) {
+                skipped++
+                continue
+            }
+
+            transactionsToInsert.add(
+                SmsTransactionEntity(
+                    sender = msg.sender,
+                    body = msg.body,
+                    amount = parsed.amount,
+                    type = parsed.type,
+                    merchant = parsed.merchant,
+                    category = parsed.category,
+                    bank = parsed.bank,
+                    accountHint = parsed.accountName,
+                    isBillable = true,
+                    transactionTime = msg.timestamp,
+                    hashKey = hashKey
+                )
+            )
+            auditToInsert.add(
+                SmsAuditEntity(
+                    sender = msg.sender,
+                    body = msg.body,
+                    timestamp = msg.timestamp,
+                    status = "IMPORTED",
+                    skipReason = "",
+                    parsedAmount = parsed.amount,
+                    parsedType = parsed.type,
+                    hashKey = hashKey
+                )
+            )
+            imported++
         }
 
-        Log.d(TAG, "Import complete. Imported: $importedCount")
-        return importedCount
+        if (transactionsToInsert.isNotEmpty()) {
+            dao.insertAll(transactionsToInsert)
+        }
+        if (auditToInsert.isNotEmpty()) {
+            auditDao.insertAll(auditToInsert)
+        }
+
+        Log.d(TAG, "Import complete. $imported imported, $failed failed, $skipped skipped")
+        return ImportResult(imported, failed, skipped)
     }
 
     suspend fun importSingle(msg: SmsMessage): SmsTransactionEntity? {

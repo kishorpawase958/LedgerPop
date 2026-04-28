@@ -37,7 +37,7 @@ fun TransactionsScreen() {
         factory = TransactionsViewModel.factory(db)
     )
     val uiState by viewModel.uiState.collectAsState()
-    val filtered = viewModel.filteredTransactions()
+    val filtered = uiState.filteredTransactions
 
     var selectedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
     var quickCategoryTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
@@ -231,7 +231,7 @@ fun TransactionsScreen() {
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 96.dp)
+                    contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
                     items(
                         items = filtered,
@@ -241,11 +241,6 @@ fun TransactionsScreen() {
                             txn = txn,
                             onClick = { selectedTxn = txn },
                             onCategoryClick = { quickCategoryTxn = txn }
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            thickness = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
                         )
                     }
                 }
@@ -257,7 +252,9 @@ fun TransactionsScreen() {
             onClick = { showAddSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(20.dp),
+                .padding(end = 20.dp, bottom = 125.dp),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
             icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
             text = { Text("Add") }
         )
@@ -283,6 +280,7 @@ fun TransactionsScreen() {
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
+            colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.setDateRange(
@@ -330,6 +328,8 @@ fun TransactionsScreen() {
 
 // ── Transaction Row ────────────────────────────────────────────────────────────
 
+private val transactionDateFormatter = SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
+
 @Composable
 private fun TransactionRow(
     txn: SmsTransactionEntity,
@@ -340,13 +340,15 @@ private fun TransactionRow(
     val isBillable = txn.isBillable
     val amountColor = if (isDebit) MaterialTheme.colorScheme.error else Color(0xFF00B894)
     val time = remember(txn.transactionTime) {
-        SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
-            .format(Date(txn.transactionTime))
+        transactionDateFormatter.format(Date(txn.transactionTime))
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
             .clickable { onClick() }
             .alpha(if (isBillable) 1f else 0.45f)
             .padding(horizontal = 16.dp, vertical = 13.dp),
@@ -460,6 +462,7 @@ fun QuickCategoryUpdateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Text(
                 text = "Update Category",

@@ -44,7 +44,8 @@ class SmsReceiver : BroadcastReceiver() {
                     )
 
                     val importer = SmsImporter(
-                        smsReader = NoOpSmsReader(),
+                        context = context,
+                        smsReader = NoOpSmsReader(context),
                         dao = dao,
                         auditDao = auditDao
                     )
@@ -58,6 +59,6 @@ class SmsReceiver : BroadcastReceiver() {
     }
 }
 
-class NoOpSmsReader : SmsReader(contentResolver = null) {
+class NoOpSmsReader(context: Context) : SmsReader(context) {
     override fun readTransactionSms(): List<SmsMessage> = emptyList()
 }

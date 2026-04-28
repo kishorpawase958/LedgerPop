@@ -7,69 +7,73 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.ui.state.TransactionsUiState
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class TransactionsViewModel(
     private val repository: TransactionRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(TransactionsUiState(isLoading = true))
-    val uiState: StateFlow<TransactionsUiState> = _uiState.asStateFlow()
+    private val _query = MutableStateFlow("")
+    private val _selectedFilter = MutableStateFlow("All")
+    private val _selectedCategory = MutableStateFlow("All")
+    private val _dateRange = MutableStateFlow<Pair<Long?, Long?>>(null to null)
 
-    init {
-        viewModelScope.launch {
-            repository.getAllTransactions().collect { transactions ->
-                _uiState.update {
-                    it.copy(allTransactions = transactions, isLoading = false)
-                }
-            }
-        }
-    }
+    val uiState: StateFlow<TransactionsUiState> = combine(
+        repository.getAllTransactions(),
+        _query,
+        _selectedFilter,
+        _selectedCategory,
+        _dateRange
+    ) { transactions, query, filter, category, dateRange ->
+        val (start, end) = dateRange
+        
+        val filtered = transactions.filter { txn ->
+            val matchesQuery = query.isBlank() ||
+                    txn.merchant.contains(query, ignoreCase = true) ||
+                    txn.sender.contains(query, ignoreCase = true) ||
+                    txn.body.contains(query, ignoreCase = true)
 
-    fun onQueryChange(query: String) = _uiState.update { it.copy(query = query) }
-    fun onFilterChange(filter: String) = _uiState.update { it.copy(selectedFilter = filter) }
-    fun onCategoryChange(category: String) = _uiState.update { it.copy(selectedCategory = category) }
-
-    // ── Date Filter Functions ────────────────────────────────────────────────
-
-    fun setDateRange(start: Long?, end: Long?) {
-        _uiState.update { it.copy(startDateMillis = start, endDateMillis = end) }
-    }
-
-    fun clearDates() {
-        _uiState.update { it.copy(startDateMillis = null, endDateMillis = null) }
-    }
-
-    fun filteredTransactions(): List<SmsTransactionEntity> {
-        val state = _uiState.value
-        return state.allTransactions.filter { txn ->
-            // 1. Text Query
-            val matchesQuery = state.query.isBlank() ||
-                    txn.merchant.contains(state.query, ignoreCase = true) ||
-                    txn.sender.contains(state.query, ignoreCase = true) ||
-                    txn.body.contains(state.query, ignoreCase = true)
-
-            // 2. Type Filter
-            val matchesFilter = when (state.selectedFilter) {
+            val matchesFilter = when (filter) {
                 "Debit" -> txn.type == "DEBIT"
                 "Credit" -> txn.type == "CREDIT"
                 else -> true
             }
 
-            // 3. Category Filter
-            val matchesCategory = state.selectedCategory == "All" ||
-                    txn.category == state.selectedCategory
+            val matchesCategory = category == "All" || txn.category == category
 
-            // 4. Date Range Filter
-            val matchesDateStart = state.startDateMillis == null || txn.transactionTime >= state.startDateMillis
-            val matchesDateEnd = state.endDateMillis == null || txn.transactionTime <= (state.endDateMillis + 86400000L - 1) // include to end of day
+            val matchesDateStart = start == null || txn.transactionTime >= start
+            val matchesDateEnd = end == null || txn.transactionTime <= (end + 86400000L - 1)
 
             matchesQuery && matchesFilter && matchesCategory && matchesDateStart && matchesDateEnd
         }
+
+        TransactionsUiState(
+            allTransactions = transactions,
+            filteredTransactions = filtered,
+            query = query,
+            selectedFilter = filter,
+            selectedCategory = category,
+            startDateMillis = start,
+            endDateMillis = end,
+            isLoading = false
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = TransactionsUiState(isLoading = true)
+    )
+
+    fun onQueryChange(query: String) { _query.value = query }
+    fun onFilterChange(filter: String) { _selectedFilter.value = filter }
+    fun onCategoryChange(category: String) { _selectedCategory.value = category }
+
+    fun setDateRange(start: Long?, end: Long?) {
+        _dateRange.value = start to end
+    }
+
+    fun clearDates() {
+        _dateRange.value = null to null
     }
 
     fun saveTransaction(txn: SmsTransactionEntity) {

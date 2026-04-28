@@ -200,7 +200,8 @@ fun AnalyticsScreen() {
                                 )
                                 ExposedDropdownMenu(
                                     expanded = catExpanded,
-                                    onDismissRequest = { catExpanded = false }
+                                    onDismissRequest = { catExpanded = false },
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surface) // Solid
                                 ) {
                                     uiState.availableCategories.forEach { cat ->
                                         DropdownMenuItem(
@@ -231,7 +232,8 @@ fun AnalyticsScreen() {
                                 )
                                 ExposedDropdownMenu(
                                     expanded = accExpanded,
-                                    onDismissRequest = { accExpanded = false }
+                                    onDismissRequest = { accExpanded = false },
+                                    modifier = Modifier.background(MaterialTheme.colorScheme.surface) // Solid
                                 ) {
                                     uiState.availableAccounts.forEach { acc ->
                                         DropdownMenuItem(
@@ -321,6 +323,7 @@ fun AnalyticsScreen() {
                         summary = summary,
                         onClick = { viewModel.openDrillDown(DrillDownType.Category(summary.category)) }
                     )
+                    Spacer(Modifier.height(8.dp))
                 }
             }
 
@@ -344,7 +347,7 @@ fun AnalyticsScreen() {
             onClick = { viewModel.exportToCsv(context) },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(20.dp),
+                .padding(end = 20.dp, bottom = 125.dp),
             icon = { Icon(Icons.Rounded.Download, contentDescription = null) },
             text = { Text("Export CSV") },
             containerColor = MaterialTheme.colorScheme.tertiaryContainer,
@@ -356,6 +359,8 @@ fun AnalyticsScreen() {
     if (drillDownData != null) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.closeDrillDown() },
+            containerColor = MaterialTheme.colorScheme.surface, // Solid
+            tonalElevation = 0.dp,
             modifier = Modifier.fillMaxHeight(0.9f)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -380,14 +385,15 @@ fun AnalyticsScreen() {
                     }
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                        // FIX: Provide a fallback emptyList() to prevent NPE during dismiss animation
                         items(drillDownData ?: emptyList()) { txn ->
-                            TransactionRowCompact(txn)
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            ) {
+                                TransactionRowCompact(txn)
+                            }
                         }
                     }
                 }
@@ -403,6 +409,7 @@ fun AnalyticsScreen() {
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
+            colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface), // Solid
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.setDateRange(

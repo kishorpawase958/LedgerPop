@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import java.text.SimpleDateFormat
@@ -36,14 +37,22 @@ fun TransactionDetailSheet(
     val existingTransactions by produceState(initialValue = emptyList<SmsTransactionEntity>()) {
         db.smsTransactionDao().getAllTransactions().collect { value = it }
     }
-    val existingCategories = remember(existingTransactions) {
-        existingTransactions.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+
+    var isExpense by remember { mutableStateOf(txn.type == "DEBIT") }
+
+    val categories = remember(isExpense, existingTransactions) {
+        val type = if (isExpense) "DEBIT" else "CREDIT"
+        val engineCats = if (isExpense) CategoryEngine.debitCategories() else CategoryEngine.creditCategories()
+        val existingOfType = existingTransactions
+            .filter { it.type == type }
+            .map { it.category }
+            .filter { it.isNotBlank() }
+        (engineCats + existingOfType).distinct().sorted()
     }
+
     val existingAccounts = remember(existingTransactions) {
         existingTransactions.map { it.accountHint }.filter { it.isNotBlank() }.distinct().sorted()
     }
-
-    var isExpense by remember { mutableStateOf(txn.type == "DEBIT") }
     var amount by remember { mutableStateOf(txn.amount.toString()) }
     var merchant by remember { mutableStateOf(txn.merchant) }
     var sender by remember { mutableStateOf(txn.sender) }
@@ -70,6 +79,8 @@ fun TransactionDetailSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
@@ -328,6 +339,7 @@ fun TransactionDetailSheet(
         )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
+            colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
             confirmButton = {
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let { picked ->
@@ -358,6 +370,7 @@ fun TransactionDetailSheet(
         )
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
             confirmButton = {
                 TextButton(onClick = {
                     val c = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
@@ -378,7 +391,7 @@ fun TransactionDetailSheet(
     if (showCategoryPicker) {
         CategoryAccountPicker(
             title = "Select Category",
-            options = existingCategories,
+            options = categories,
             selected = category,
             onSelect = { category = it },
             onDismiss = { showCategoryPicker = false }
@@ -400,6 +413,7 @@ fun TransactionDetailSheet(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
             title = { Text("Delete transaction?") },
             text = { Text("This will permanently remove this transaction and cannot be undone.") },
             confirmButton = {
