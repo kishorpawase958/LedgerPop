@@ -33,6 +33,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.ledgerpop.screens.analytics.AnalyticsScreen
 import app.ledgerpop.screens.home.HomeScreen
+import app.ledgerpop.screens.settings.PermissionsScreen
 import app.ledgerpop.screens.settings.SettingsScreen
 import app.ledgerpop.screens.settings.SmsAuditScreen
 import app.ledgerpop.screens.transactions.TransactionsScreen
@@ -44,6 +45,7 @@ sealed class Screen(val route: String) {
     object Analytics : Screen("analytics")
     object Settings : Screen("settings")
     object SmsAudit : Screen("sms_audit")
+    object Permissions : Screen("permissions")
 }
 
 data class BottomNavItem(
@@ -140,10 +142,25 @@ fun LedgerPopApp() {
                     AnalyticsScreen()
                 }
 
-
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        onNavigateToAudit = {
+                            navController.navigate(Screen.SmsAudit.route)
+                        },
+                        onNavigateToPermissions = {
+                            navController.navigate(Screen.Permissions.route)
+                        }
+                    )
+                }
 
                 composable(Screen.SmsAudit.route) {
                     SmsAuditScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Permissions.route) {
+                    PermissionsScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }
