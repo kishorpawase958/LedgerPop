@@ -143,11 +143,11 @@ object CategoryEngine {
         return OTHER
     }
 
-    fun emoji(category: String, customCategories: List<CustomCategory> = emptyList()): String {
+    fun emoji(category: String, customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity> = emptyList()): String {
         val custom = customCategories.find { it.name.equals(category, ignoreCase = true) }
         if (custom != null) return custom.emoji
 
-        return when (category) {
+        return when (normalize(category)) {
             FOOD -> "🍔"
             GROCERIES -> "🥦"
             SHOPPING -> "🛒"
@@ -166,6 +166,30 @@ object CategoryEngine {
             TRANSFER -> "🏦"
             OTHER -> "🧹"
             else -> "⁉️"
+        }
+    }
+
+    fun normalize(category: String): String {
+        val cat = category.uppercase().trim()
+        return when {
+            cat.contains("FOOD") || cat.contains("DINING") || cat.contains("RESTAURANT") || cat.contains("EAT") -> FOOD
+            cat.contains("GROCERY") || cat.contains("GROCERIES") || cat.contains("ZEPTO") || cat.contains("BLINKIT") -> GROCERIES
+            cat.contains("SHOPPING") || cat.contains("AMAZON") || cat.contains("FLIPKART") -> SHOPPING
+            cat.contains("TRAVEL") || cat.contains("UBER") || cat.contains("OLA") || cat.contains("TRANSPORT") -> TRAVEL
+            cat.contains("FUEL") || cat.contains("PETROL") || cat.contains("DIESEL") -> FUEL
+            cat.contains("BILL") || cat.contains("UTILITY") || cat.contains("RECHARGE") -> BILLS
+            cat.contains("HEALTH") || cat.contains("MEDICAL") || cat.contains("HOSPITAL") -> HEALTH
+            cat.contains("INSURANCE") -> INSURANCE
+            cat.contains("INVESTMENT") || cat.contains("STOCK") || cat.contains("MUTUAL FUND") || cat.equals("CREDIT") -> INVESTMENTS
+            cat.contains("MOVIE") || cat.contains("ENTERTAINMENT") -> ENTERTAINMENT
+            cat.contains("EMI") || cat.contains("LOAN") -> EMI
+            cat.contains("SALARY") -> SALARY
+            cat.contains("INTEREST") -> INTEREST
+            cat.contains("DIVIDEND") -> DIVIDEND
+            cat.contains("REFUND") -> REFUND
+            cat.contains("TRANSFER") -> TRANSFER
+            cat == "OTHER" || cat.isBlank() -> OTHER
+            else -> category
         }
     }
 

@@ -1,5 +1,6 @@
 package app.ledgerpop.ui.state
 
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.SmsTransactionEntity
 
 data class TrendSummary(
@@ -15,6 +16,7 @@ data class CategorySummary(
 )
 
 enum class GroupingType { DAILY, WEEKLY, MONTHLY }
+enum class AnalyticsViewType { SPENDS, INCOME }
 
 data class AnalyticsUiState(
     val totalIncome: Double = 0.0,
@@ -24,12 +26,14 @@ data class AnalyticsUiState(
     val avgDebit: Double = 0.0,
     val trendSummaries: List<TrendSummary> = emptyList(),
     val categoryBreakdown: List<CategorySummary> = emptyList(),
+    val customCategories: List<CustomCategoryEntity> = emptyList(),
     val isLoading: Boolean = true,
 
     // Filters
     val startDateMillis: Long? = null,
     val endDateMillis: Long? = null,
     val groupBy: GroupingType = GroupingType.MONTHLY,
+    val viewType: AnalyticsViewType = AnalyticsViewType.SPENDS,
     val selectedCategory: String = "All",
     val selectedAccount: String = "All",
 

@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,8 +21,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -33,21 +36,27 @@ fun AddTransactionSheet(
 ) {
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
 
     val existingTransactions by produceState(initialValue = emptyList<SmsTransactionEntity>()) {
         db.smsTransactionDao().getAllTransactions().collect { value = it }
     }
+
+    val customCategories by produceState(initialValue = emptyList<CustomCategoryEntity>()) {
+        db.customCategoryDao().getAllCategories().collect { value = it }
+    }
     
     var isExpense by remember { mutableStateOf(true) }
 
-    val categories = remember(isExpense, existingTransactions) {
+    val categories = remember(isExpense, existingTransactions, customCategories) {
         val type = if (isExpense) "DEBIT" else "CREDIT"
         val engineCats = if (isExpense) CategoryEngine.debitCategories() else CategoryEngine.creditCategories()
+        val customOfType = customCategories.filter { it.type == type }.map { it.name }
         val existingOfType = existingTransactions
             .filter { it.type == type }
             .map { it.category }
             .filter { it.isNotBlank() }
-        (engineCats + existingOfType).distinct().sorted()
+        (engineCats + customOfType + existingOfType).distinct().sorted()
     }
     
     val existingAccounts = remember(existingTransactions) {
@@ -57,6 +66,7 @@ fun AddTransactionSheet(
     var merchant by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var accountHint by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
     var isBillable by remember { mutableStateOf(true) }
     var amountError by remember { mutableStateOf(false) }
 
@@ -201,6 +211,19 @@ fun AddTransactionSheet(
 
             Spacer(Modifier.height(10.dp))
 
+            // Note
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                label = { Text("Note (optional)") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Notes, contentDescription = null) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                maxLines = 3
+            )
+
+            Spacer(Modifier.height(10.dp))
+
             // Date & Time — both editable
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -289,7 +312,8 @@ fun AddTransactionSheet(
                             accountHint = accountHint.trim(),
                             transactionTime = selectedDateMillis,
                             hashKey = UUID.randomUUID().toString(),
-                            isBillable = isBillable
+                            isBillable = isBillable,
+                            note = note.trim()
                         )
                     )
                     onDismiss()
@@ -372,7 +396,24 @@ fun AddTransactionSheet(
             options = categories,
             selected = category,
             onSelect = { category = it },
-            onDismiss = { showCategoryPicker = false }
+            onDismiss = { showCategoryPicker = false },
+            customCategories = customCategories,
+            onUpdateEmoji = { name, emoji ->
+                scope.launch {
+                    val existing = db.customCategoryDao().getByName(name)
+                    if (existing != null) {
+                        db.customCategoryDao().insert(existing.copy(emoji = emoji))
+                    } else {
+                        db.customCategoryDao().insert(
+                            CustomCategoryEntity(
+                                name = name,
+                                type = if (isExpense) "DEBIT" else "CREDIT",
+                                emoji = emoji
+                            )
+                        )
+                    }
+                }
+            }
         )
     }
 

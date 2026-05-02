@@ -1,5 +1,6 @@
 package app.ledgerpop.ui.state
 
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.sms.ImportResult
 
 enum class AppTheme {
@@ -19,5 +20,6 @@ data class SettingsUiState(
     val dateRangeToMillis: Long? = null,
     val hasReadSmsPermission: Boolean = false,
     val hasReceiveSmsPermission: Boolean = false,
-    val appTheme: AppTheme = AppTheme.AUTO
+    val appTheme: AppTheme = AppTheme.AUTO,
+    val customCategories: List<CustomCategoryEntity> = emptyList()
 )

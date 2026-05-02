@@ -40,6 +40,7 @@ import app.ledgerpop.ui.viewmodel.SettingsViewModel
 fun SettingsScreen(
     onNavigateToPermissions: () -> Unit,
     onNavigateToSmsAudit: () -> Unit,
+    onNavigateToCategories: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -49,9 +50,19 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     // Handle Import Results
-    LaunchedEffect(uiState.lastImportResult) {
-        uiState.lastImportResult?.let { result ->
-            val message = "Import Complete: ${result.imported} Success, ${result.failed} Failed, ${result.skipped} Skipped"
+    LaunchedEffect(uiState.lastImportResult, uiState.lastImportMessage) {
+        val result = uiState.lastImportResult
+        val message = uiState.lastImportMessage
+        
+        if (result != null) {
+            val toastMsg = if (result.failed == 0 && result.skipped == 0) {
+                "Imported ${result.imported} transactions"
+            } else {
+                "Import Complete: ${result.imported} Success, ${result.failed} Failed, ${result.skipped} Skipped"
+            }
+            Toast.makeText(context, toastMsg, Toast.LENGTH_LONG).show()
+            viewModel.clearImportResult()
+        } else if (message.isNotBlank()) {
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             viewModel.clearImportResult()
         }
@@ -78,6 +89,18 @@ fun SettingsScreen(
         if (granted) viewModel.showDateRangePicker()
     }
 
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        viewModel.backupData(context, uri)
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        viewModel.restoreData(context, uri)
+    }
+
+    val csvImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        viewModel.importFromCsv(uri)
+    }
+
     var showNameDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
@@ -97,24 +120,38 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.onBackground
         )
 
+        if (uiState.isImporting) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .padding(horizontal = 4.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primaryContainer,
+                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        }
+
         ProfileSection(uiState.userName) { showNameDialog = true }
 
         PreferencesSection(
             appTheme = uiState.appTheme,
             onThemeClick = { showThemeDialog = true },
-            onPermissionsClick = onNavigateToPermissions
+            onPermissionsClick = onNavigateToPermissions,
+            onCategoriesClick = onNavigateToCategories
         )
 
         DataImportSection(
             isImporting = uiState.isImporting,
             onFullScan = { checkAndRequestPermission(context, uiState.hasReadSmsPermission, readLauncher) { viewModel.importSms() } },
-            onRangeScan = { checkAndRequestPermission(context, uiState.hasReadSmsPermission, rangeLauncher) { viewModel.showDateRangePicker() } }
+            onRangeScan = { checkAndRequestPermission(context, uiState.hasReadSmsPermission, rangeLauncher) { viewModel.showDateRangePicker() } },
+            onCsvImport = { csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/octet-stream")) }
         )
 
         ManagementSection(
             onSmsAudit = onNavigateToSmsAudit,
-            onBackup = { viewModel.backupData(context) },
-            onRestore = { viewModel.restoreData(context, null) },
+            onBackup = { backupLauncher.launch("ledgerpop_backup.dat") },
+            onRestore = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
             onClearAll = { showClearDialog = true },
             onRestart = { restartApp(context) }
         )
@@ -128,7 +165,10 @@ fun SettingsScreen(
     if (showThemeDialog) {
         ThemeDialog(
             currentTheme = uiState.appTheme,
-            onThemeSelected = { viewModel.updateTheme(it) },
+            onThemeSelected = {
+                viewModel.updateTheme(it)
+                restartApp(context)
+            },
             onDismiss = { showThemeDialog = false }
         )
     }
@@ -206,7 +246,8 @@ private fun ProfileSection(userName: String, onClick: () -> Unit) {
 private fun PreferencesSection(
     appTheme: AppTheme,
     onThemeClick: () -> Unit,
-    onPermissionsClick: () -> Unit
+    onPermissionsClick: () -> Unit,
+    onCategoriesClick: () -> Unit
 ) {
     SectionCard(title = "Preferences") {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -215,6 +256,13 @@ private fun PreferencesSection(
                     icon = Icons.Rounded.Palette,
                     title = "App Theme",
                     subtitle = appTheme.name.lowercase().replaceFirstChar { it.uppercase() }
+                )
+            }
+            MiniCard(onClick = onCategoriesClick) {
+                SettingRow(
+                    icon = Icons.Rounded.Category,
+                    title = "Categories",
+                    subtitle = "Manage category names and emojis"
                 )
             }
             MiniCard(onClick = onPermissionsClick) {
@@ -232,7 +280,8 @@ private fun PreferencesSection(
 private fun DataImportSection(
     isImporting: Boolean,
     onFullScan: () -> Unit,
-    onRangeScan: () -> Unit
+    onRangeScan: () -> Unit,
+    onCsvImport: () -> Unit
 ) {
     SectionCard(title = "Data Import") {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -251,6 +300,13 @@ private fun DataImportSection(
                     icon = Icons.Rounded.DateRange,
                     title = "Date Range Import",
                     subtitle = "Select specific timeframe"
+                )
+            }
+            MiniCard(onClick = onCsvImport) {
+                SettingRow(
+                    icon = Icons.Rounded.FileOpen,
+                    title = "Import from CSV",
+                    subtitle = "Load data from a CSV file"
                 )
             }
         }
@@ -316,6 +372,15 @@ private fun ManagementSection(
 
 @Composable
 private fun AboutSection() {
+    val context = LocalContext.current
+    val versionName = remember(context) {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "Unknown"
+        } catch (_: Exception) {
+            "1.0.5"
+        }
+    }
+
     SectionCard(title = "About") {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -323,7 +388,7 @@ private fun AboutSection() {
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text("LedgerPop", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Version 1.0.0", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Version $versionName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Smart SMS expense tracker.\nSecure & on-device.",

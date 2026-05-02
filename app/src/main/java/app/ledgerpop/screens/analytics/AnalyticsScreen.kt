@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.LedgerPopDatabase
@@ -38,6 +39,8 @@ import app.ledgerpop.ui.state.GroupingType
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.viewmodel.AnalyticsViewModel
 import app.ledgerpop.ui.viewmodel.DrillDownType
+import app.ledgerpop.screens.transactions.TransactionDetailSheet
+import app.ledgerpop.screens.transactions.QuickCategoryUpdateDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,6 +56,9 @@ fun AnalyticsScreen() {
 
     val drillDownData by viewModel.drillDownTransactions.collectAsState()
     val drillDownTitle by viewModel.drillDownTitle.collectAsState()
+
+    var selectedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
+    var quickCategoryTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
     var showFilters by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -194,7 +200,7 @@ fun AnalyticsScreen() {
                                     readOnly = true,
                                     label = { Text("Category") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catExpanded) },
-                                    modifier = Modifier.menuAnchor(),
+                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true),
                                     shape = RoundedCornerShape(12.dp),
                                     textStyle = MaterialTheme.typography.bodySmall
                                 )
@@ -205,7 +211,15 @@ fun AnalyticsScreen() {
                                 ) {
                                     uiState.availableCategories.forEach { cat ->
                                         DropdownMenuItem(
-                                            text = { Text(cat) },
+                                            text = { 
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    if (cat != "All") {
+                                                        Text(CategoryEngine.emoji(cat, uiState.customCategories))
+                                                        Spacer(Modifier.width(8.dp))
+                                                    }
+                                                    Text(cat)
+                                                }
+                                            },
                                             onClick = {
                                                 viewModel.setCategoryFilter(cat)
                                                 catExpanded = false
@@ -226,7 +240,7 @@ fun AnalyticsScreen() {
                                     readOnly = true,
                                     label = { Text("Account") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accExpanded) },
-                                    modifier = Modifier.menuAnchor(),
+                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true),
                                     shape = RoundedCornerShape(12.dp),
                                     textStyle = MaterialTheme.typography.bodySmall
                                 )
@@ -287,6 +301,26 @@ fun AnalyticsScreen() {
                 Spacer(Modifier.height(24.dp))
             }
 
+            // ── View Type Selector (Spends vs Income) ────────────────────────
+            item {
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                ) {
+                    SegmentedButton(
+                        selected = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
+                        onClick = { viewModel.setViewType(app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                    ) { Text("Spends") }
+                    SegmentedButton(
+                        selected = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME,
+                        onClick = { viewModel.setViewType(app.ledgerpop.ui.state.AnalyticsViewType.INCOME) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                    ) { Text("Income") }
+                }
+            }
+
             // ── Scrollable Vertical Bar Chart ─────────────────────────────────
             if (uiState.trendSummaries.isNotEmpty()) {
                 item {
@@ -310,8 +344,13 @@ fun AnalyticsScreen() {
             // ── Category Breakdown (Clickable) ────────────────────────────────
             if (uiState.categoryBreakdown.isNotEmpty()) {
                 item {
+                    val breakdownTitle = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) 
+                        "Spending by Category" 
+                    else 
+                        "Income by Category"
+                    
                     Text(
-                        "Spending by Category",
+                        breakdownTitle,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -321,6 +360,8 @@ fun AnalyticsScreen() {
                 items(uiState.categoryBreakdown) { summary ->
                     CategoryRow(
                         summary = summary,
+                        customCategories = uiState.customCategories,
+                        viewType = uiState.viewType,
                         onClick = { viewModel.openDrillDown(DrillDownType.Category(summary.category)) }
                     )
                     Spacer(Modifier.height(8.dp))
@@ -347,11 +388,11 @@ fun AnalyticsScreen() {
             onClick = { viewModel.exportToCsv(context) },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 125.dp),
+                .padding(end = 20.dp, bottom = 135.dp),
             icon = { Icon(Icons.Rounded.Download, contentDescription = null) },
-            text = { Text("Export CSV") },
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+            text = { Text("Export") },
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
         )
     }
 
@@ -392,13 +433,47 @@ fun AnalyticsScreen() {
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                             ) {
-                                TransactionRowCompact(txn)
+                                TransactionRowCompact(
+                                    txn = txn,
+                                    customCategories = uiState.customCategories,
+                                    onClick = { selectedTxn = txn },
+                                    onCategoryClick = { quickCategoryTxn = txn }
+                                )
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // ── Quick Category Update Dialog ─────────────────────────────────────────
+    quickCategoryTxn?.let { txn ->
+        QuickCategoryUpdateDialog(
+            txn = txn,
+            customCategories = uiState.customCategories,
+            onDismiss = { quickCategoryTxn = null },
+            onSave = { updatedTxn ->
+                viewModel.saveTransaction(updatedTxn)
+                quickCategoryTxn = null
+            }
+        )
+    }
+
+    // ── Detail / Edit Sheet ──────────────────────────────────────────────────
+    selectedTxn?.let { txn ->
+        TransactionDetailSheet(
+            txn = txn,
+            onDismiss = { selectedTxn = null },
+            onSave = { updated ->
+                viewModel.saveTransaction(updated)
+                selectedTxn = null
+            },
+            onDelete = { toDelete ->
+                viewModel.deleteTransaction(toDelete)
+                selectedTxn = null
+            }
+        )
     }
 
     // ── Date Range Picker Dialog ──────────────────────────────────────────────
@@ -466,8 +541,20 @@ private fun KpiCard(
 @Composable
 private fun CategoryRow(
     summary: CategorySummary,
+    customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity> = emptyList(),
+    viewType: app.ledgerpop.ui.state.AnalyticsViewType = app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
     onClick: () -> Unit
 ) {
+    val amountColor = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) 
+        MaterialTheme.colorScheme.error 
+    else 
+        Color(0xFF00B894)
+    
+    val labelText = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) 
+        "of expenses" 
+    else 
+        "of income"
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -477,19 +564,19 @@ private fun CategoryRow(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(CategoryEngine.emoji(summary.category), style = MaterialTheme.typography.titleLarge)
+            Text(CategoryEngine.emoji(summary.category, customCategories), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(summary.category, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                    Text("₹${"%,.0f".format(summary.amount)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                    Text("₹${"%,.0f".format(summary.amount)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = amountColor)
                 }
                 Spacer(Modifier.height(6.dp))
                 Box(modifier = Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))) {
                     Box(modifier = Modifier.fillMaxHeight().fillMaxWidth((summary.percentage / 100f).coerceIn(0f, 1f)).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(3.dp)))
                 }
                 Spacer(Modifier.height(4.dp))
-                Text("${summary.percentage.toInt()}% of expenses", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${summary.percentage.toInt()}% $labelText", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -568,7 +655,12 @@ fun ScrollableBarChart(
 }
 
 @Composable
-private fun TransactionRowCompact(txn: SmsTransactionEntity) {
+private fun TransactionRowCompact(
+    txn: SmsTransactionEntity,
+    customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity> = emptyList(),
+    onClick: () -> Unit,
+    onCategoryClick: () -> Unit
+) {
     val isDebit = txn.type == "DEBIT"
     val isBillable = txn.isBillable
     val amountColor = if (isDebit) MaterialTheme.colorScheme.error else Color(0xFF00B894)
@@ -579,6 +671,7 @@ private fun TransactionRowCompact(txn: SmsTransactionEntity) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onClick() }
             .alpha(if (isBillable) 1f else 0.45f)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -590,14 +683,13 @@ private fun TransactionRowCompact(txn: SmsTransactionEntity) {
                 .background(
                     if (isBillable) amountColor.copy(alpha = 0.1f)
                     else MaterialTheme.colorScheme.surfaceVariant
-                ),
+                )
+                .clickable { onCategoryClick() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = if (isDebit) Icons.Rounded.ArrowUpward else Icons.Rounded.ArrowDownward,
-                contentDescription = null,
-                tint = if (isBillable) amountColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
+            Text(
+                text = CategoryEngine.emoji(txn.category, customCategories),
+                fontSize = 16.sp
             )
         }
 

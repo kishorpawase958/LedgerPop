@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         SmsAuditEntity::class,
         CustomCategoryEntity::class
     ],
-    version = 3, // bump this by 1 from your current version
+    version = 4, // bumped from 3
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -31,7 +31,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
                     LedgerPopDatabase::class.java,
                     "ledgerpop_db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }
             }

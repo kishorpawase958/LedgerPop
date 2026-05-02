@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class CustomCategoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
-    val type: String   // "DEBIT" or "CREDIT"
+    val type: String,   // "DEBIT" or "CREDIT"
+    val emoji: String = "📁"
 )

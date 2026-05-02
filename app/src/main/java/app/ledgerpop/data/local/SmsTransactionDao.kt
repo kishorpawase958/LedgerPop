@@ -44,4 +44,7 @@ interface SmsTransactionDao {
 
     @Query("DELETE FROM sms_transactions")
     suspend fun deleteAll()
+
+    @Query("SELECT DISTINCT accountHint FROM sms_transactions WHERE accountHint != ''")
+    suspend fun getAllAccounts(): List<String>
 }

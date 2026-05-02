@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.TrendingDown
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,11 +33,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionSheet
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
 import app.ledgerpop.ui.viewmodel.HomeViewModel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -46,8 +50,13 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
     val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(db))
     val uiState by viewModel.uiState.collectAsState()
+
+    val customCategories by produceState(initialValue = emptyList<CustomCategoryEntity>()) {
+        db.customCategoryDao().getAllCategories().collect { value = it }
+    }
 
     var selectedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
     var quickCategoryTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
@@ -191,6 +200,7 @@ fun HomeScreen(
                 ) { txn ->
                     HomeTransactionRow(
                         txn = txn,
+                        customCategories = customCategories,
                         onClick = { selectedTxn = txn },
                         onCategoryClick = { quickCategoryTxn = txn }
                     )
@@ -203,7 +213,7 @@ fun HomeScreen(
             onClick = { showAddSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 125.dp),
+                .padding(end = 20.dp, bottom = 135.dp),
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
             icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
@@ -215,10 +225,27 @@ fun HomeScreen(
     quickCategoryTxn?.let { txn ->
         QuickCategoryUpdateDialog(
             txn = txn,
+            customCategories = customCategories,
             onDismiss = { quickCategoryTxn = null },
             onSave = { updatedTxn ->
                 viewModel.saveTransaction(updatedTxn)
                 quickCategoryTxn = null
+            },
+            onUpdateEmoji = { name, emoji ->
+                scope.launch {
+                    val existing = db.customCategoryDao().getByName(name)
+                    if (existing != null) {
+                        db.customCategoryDao().insert(existing.copy(emoji = emoji))
+                    } else {
+                        db.customCategoryDao().insert(
+                            CustomCategoryEntity(
+                                name = name,
+                                type = txn.type,
+                                emoji = emoji
+                            )
+                        )
+                    }
+                }
             }
         )
     }
@@ -253,6 +280,7 @@ fun HomeScreen(
 @Composable
 private fun HomeTransactionRow(
     txn: SmsTransactionEntity,
+    customCategories: List<CustomCategoryEntity> = emptyList(),
     onClick: () -> Unit,
     onCategoryClick: () -> Unit
 ) {
@@ -289,7 +317,7 @@ private fun HomeTransactionRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = CategoryEngine.emoji(txn.category),
+                text = CategoryEngine.emoji(txn.category, customCategories),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.alpha(if (isBillable) 1f else 0.5f)
             )
@@ -582,9 +610,9 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
                 ) {
                     Icon(
                         imageVector = if (isUp)
-                            Icons.Rounded.TrendingUp
+                            Icons.AutoMirrored.Rounded.TrendingUp
                         else
-                            Icons.Rounded.TrendingDown,
+                            Icons.AutoMirrored.Rounded.TrendingDown,
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
                         tint = if (isUp) MaterialTheme.colorScheme.error
@@ -664,17 +692,22 @@ private fun formatAmount(amount: Double): String {
 @Composable
 fun QuickCategoryUpdateDialog(
     txn: SmsTransactionEntity,
+    customCategories: List<CustomCategoryEntity> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (SmsTransactionEntity) -> Unit
+    onSave: (SmsTransactionEntity) -> Unit,
+    onUpdateEmoji: ((String, String) -> Unit)? = null
 ) {
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
+    var editingEmojiFor by remember { mutableStateOf<String?>(null) }
 
-    val categories = remember(txn.type) {
-        if (txn.type == "CREDIT") {
+    val categories = remember(txn.type, customCategories) {
+        val standard = if (txn.type == "CREDIT") {
             CategoryEngine.creditCategories()
         } else {
             CategoryEngine.debitCategories()
         }
+        val custom = customCategories.filter { it.type == txn.type }.map { it.name }
+        (standard + custom).distinct()
     }
 
     AlertDialog(
@@ -704,7 +737,16 @@ fun QuickCategoryUpdateDialog(
                         FilterChip(
                             selected = selectedCategory == cat,
                             onClick = { selectedCategory = cat },
-                            label = { Text("${CategoryEngine.emoji(cat)} $cat") },
+                            label = { 
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = CategoryEngine.emoji(cat, customCategories),
+                                        modifier = Modifier.clickable { editingEmojiFor = cat }
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(cat)
+                                }
+                            },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -729,4 +771,32 @@ fun QuickCategoryUpdateDialog(
         },
         shape = RoundedCornerShape(24.dp)
     )
+
+    editingEmojiFor?.let { categoryName ->
+        var tempEmoji by remember { mutableStateOf(customCategories.find { it.name == categoryName }?.emoji ?: CategoryEngine.emoji(categoryName, customCategories)) }
+        AlertDialog(
+            onDismissRequest = { editingEmojiFor = null },
+            title = { Text("Edit Emoji for $categoryName") },
+            text = {
+                OutlinedTextField(
+                    value = tempEmoji,
+                    onValueChange = { tempEmoji = it },
+                    label = { Text("Emoji") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onUpdateEmoji?.invoke(categoryName, tempEmoji)
+                    editingEmojiFor = null
+                }) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingEmojiFor = null }) { Text("Cancel") }
+            }
+        )
+    }
 }

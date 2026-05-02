@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
@@ -239,6 +240,7 @@ fun TransactionsScreen() {
                     ) { txn ->
                         TransactionRow(
                             txn = txn,
+                            customCategories = uiState.customCategories,
                             onClick = { selectedTxn = txn },
                             onCategoryClick = { quickCategoryTxn = txn }
                         )
@@ -252,7 +254,7 @@ fun TransactionsScreen() {
             onClick = { showAddSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 125.dp),
+                .padding(end = 20.dp, bottom = 135.dp),
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
             icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
@@ -264,6 +266,7 @@ fun TransactionsScreen() {
     quickCategoryTxn?.let { txn ->
         QuickCategoryUpdateDialog(
             txn = txn,
+            customCategories = uiState.customCategories,
             onDismiss = { quickCategoryTxn = null },
             onSave = { updatedTxn ->
                 viewModel.saveTransaction(updatedTxn)
@@ -333,6 +336,7 @@ private val transactionDateFormatter = SimpleDateFormat("d MMM, h:mm a", Locale.
 @Composable
 private fun TransactionRow(
     txn: SmsTransactionEntity,
+    customCategories: List<CustomCategoryEntity> = emptyList(),
     onClick: () -> Unit,
     onCategoryClick: () -> Unit
 ) {
@@ -367,7 +371,7 @@ private fun TransactionRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = CategoryEngine.emoji(txn.category),
+                text = CategoryEngine.emoji(txn.category, customCategories),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.alpha(if (isBillable) 1f else 0.5f)
             )
@@ -447,17 +451,20 @@ private fun TransactionRow(
 @Composable
 fun QuickCategoryUpdateDialog(
     txn: SmsTransactionEntity,
+    customCategories: List<CustomCategoryEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (SmsTransactionEntity) -> Unit
 ) {
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
 
-    val categories = remember(txn.type) {
-        if (txn.type == "CREDIT") {
+    val categories = remember(txn.type, customCategories) {
+        val standard = if (txn.type == "CREDIT") {
             CategoryEngine.creditCategories()
         } else {
             CategoryEngine.debitCategories()
         }
+        val custom = customCategories.filter { it.type == txn.type }.map { it.name }
+        (standard + custom).distinct()
     }
 
     AlertDialog(
@@ -487,7 +494,7 @@ fun QuickCategoryUpdateDialog(
                         FilterChip(
                             selected = selectedCategory == cat,
                             onClick = { selectedCategory = cat },
-                            label = { Text("${CategoryEngine.emoji(cat)} $cat") },
+                            label = { Text("${CategoryEngine.emoji(cat, customCategories)} $cat") },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer

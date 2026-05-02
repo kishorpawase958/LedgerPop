@@ -48,13 +48,32 @@ fun animateColorScheme(targetScheme: ColorScheme): ColorScheme {
         outline = animateColorAsState(targetScheme.outline, tween(duration)).value,
         outlineVariant = animateColorAsState(targetScheme.outlineVariant, tween(duration)).value,
         scrim = animateColorAsState(targetScheme.scrim, tween(duration)).value,
+        surfaceBright = animateColorAsState(targetScheme.surfaceBright, tween(duration)).value,
+        surfaceDim = animateColorAsState(targetScheme.surfaceDim, tween(duration)).value,
+        surfaceContainer = animateColorAsState(targetScheme.surfaceContainer, tween(duration)).value,
+        surfaceContainerLow = animateColorAsState(targetScheme.surfaceContainerLow, tween(duration)).value,
+        surfaceContainerLowest = animateColorAsState(targetScheme.surfaceContainerLowest, tween(duration)).value,
+        surfaceContainerHigh = animateColorAsState(targetScheme.surfaceContainerHigh, tween(duration)).value,
+        surfaceContainerHighest = animateColorAsState(targetScheme.surfaceContainerHighest, tween(duration)).value,
+        primaryFixed = animateColorAsState(targetScheme.primaryFixed, tween(duration)).value,
+        onPrimaryFixed = animateColorAsState(targetScheme.onPrimaryFixed, tween(duration)).value,
+        primaryFixedDim = animateColorAsState(targetScheme.primaryFixedDim, tween(duration)).value,
+        onPrimaryFixedVariant = animateColorAsState(targetScheme.onPrimaryFixedVariant, tween(duration)).value,
+        secondaryFixed = animateColorAsState(targetScheme.secondaryFixed, tween(duration)).value,
+        onSecondaryFixed = animateColorAsState(targetScheme.onSecondaryFixed, tween(duration)).value,
+        secondaryFixedDim = animateColorAsState(targetScheme.secondaryFixedDim, tween(duration)).value,
+        onSecondaryFixedVariant = animateColorAsState(targetScheme.onSecondaryFixedVariant, tween(duration)).value,
+        tertiaryFixed = animateColorAsState(targetScheme.tertiaryFixed, tween(duration)).value,
+        onTertiaryFixed = animateColorAsState(targetScheme.onTertiaryFixed, tween(duration)).value,
+        tertiaryFixedDim = animateColorAsState(targetScheme.tertiaryFixedDim, tween(duration)).value,
+        onTertiaryFixedVariant = animateColorAsState(targetScheme.onTertiaryFixedVariant, tween(duration)).value,
     )
 }
 
 private val DarkColors = darkColorScheme(
-    primary             = NeonGreen500,
+    primary             = Purple500,
     onPrimary           = Color.Black,
-    primaryContainer    = NeonGreenDark,
+    primaryContainer    = Purple700,
     onPrimaryContainer  = Color.White,
     secondary           = SuccessGreen,
     onSecondary         = Color.Black,
@@ -70,10 +89,10 @@ private val DarkColors = darkColorScheme(
 )
 
 private val LightColors = lightColorScheme(
-    primary             = NeonGreenDark,
+    primary             = Purple700,
     onPrimary           = Color.White,
-    primaryContainer    = NeonGreen500,
-    onPrimaryContainer  = Color.Black,
+    primaryContainer    = Purple200,
+    onPrimaryContainer  = Purple900,
     secondary           = SuccessGreen,
     onSecondary         = Color.White,
     tertiary            = WarningOrange,
@@ -100,7 +119,7 @@ fun LedgerPopTheme(
     }
 
     val colorScheme = animateColorScheme(targetColorScheme)
-    val darkTheme = targetColorScheme == DarkColors
+    val darkTheme = targetColorScheme != LightColors
 
     val view = LocalView.current
     if (!view.isInEditMode) {

@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Help
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -269,7 +271,7 @@ private fun AuditEntryCard(
         "IMPORTED"     -> Icons.Rounded.CheckCircle
         "SKIPPED"      -> Icons.Rounded.RemoveCircleOutline
         "PARSE_FAILED" -> Icons.Rounded.ErrorOutline
-        else           -> Icons.Rounded.Help
+        else           -> Icons.AutoMirrored.Rounded.Help
     }
 
     val sdf = SimpleDateFormat("d MMM yy, h:mm a", Locale.getDefault())
@@ -469,7 +471,7 @@ private fun AuditEntryCard(
                                 )
                             ) {
                                 Icon(
-                                    Icons.Rounded.Undo,
+                                    Icons.AutoMirrored.Rounded.Undo,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp)
                                 )

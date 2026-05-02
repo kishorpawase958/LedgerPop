@@ -2,10 +2,11 @@ package app.ledgerpop.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Subtler Neon Green Palette (Modern & Premium)
-val NeonGreen500 = Color(0xFF4EE44E) // Softened Neon Green
-val NeonGreen600 = Color(0xFF3BD13B)
-val NeonGreenDark = Color(0xFF2E8B2E) // Clean Medium-Dark Green
+// Signature Purple Palette (Modern & Premium)
+val Purple200 = Color(0xFFE1D5FF) // Very Light Purple
+val Purple500 = Color(0xFFBB86FC) // Signature Light Purple (Good for Dark Theme Primary)
+val Purple700 = Color(0xFF7B1FA2) // Deep Purple (Good for Light Theme Primary / Containers)
+val Purple900 = Color(0xFF4A148C) // Darkest Purple
 
 // Functional Colors
 val SuccessGreen = Color(0xFF00B894)
@@ -26,7 +27,7 @@ val SurfaceLight = Color(0xFFFFFFFF)
 val BackgroundLight = Color(0xFFF8F9FC)
 
 // Surface Colors - Dark
-val SurfaceDark  = Color(0xFF000000) // True Black for high contrast neon
+val SurfaceDark  = Color(0xFF000000)
 val SurfaceDark2 = Color(0xFF121212)
 val SurfaceDark3 = Color(0xFF1E1E1E)
 val BackgroundDark = Color(0xFF000000)

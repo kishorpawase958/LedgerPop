@@ -15,6 +15,9 @@ interface SmsAuditDao {
     @Query("SELECT * FROM sms_audit ORDER BY timestamp DESC")
     fun getAll(): Flow<List<SmsAuditEntity>>
 
+    @Query("SELECT * FROM sms_audit ORDER BY timestamp DESC")
+    suspend fun getAllSync(): List<SmsAuditEntity>
+
     @Query("SELECT * FROM sms_audit WHERE status = :status ORDER BY timestamp DESC")
     fun getByStatus(status: String): Flow<List<SmsAuditEntity>>
 

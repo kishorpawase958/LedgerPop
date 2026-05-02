@@ -3,6 +3,7 @@ package app.ledgerpop.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
@@ -21,12 +22,13 @@ class TransactionsViewModel(
 
     val uiState: StateFlow<TransactionsUiState> = combine(
         repository.getAllTransactions(),
+        repository.getAllCustomCategories(),
         _query,
         _selectedFilter,
-        _selectedCategory,
-        _dateRange
-    ) { transactions, query, filter, category, dateRange ->
-        val (start, end) = dateRange
+        combine(_selectedCategory, _dateRange) { cat, range -> cat to range }
+    ) { transactions, customCategories, query, filter, combinedCatRange ->
+        val category = combinedCatRange.first
+        val (start, end) = combinedCatRange.second
         
         val filtered = transactions.filter { txn ->
             val matchesQuery = query.isBlank() ||
@@ -51,6 +53,7 @@ class TransactionsViewModel(
         TransactionsUiState(
             allTransactions = transactions,
             filteredTransactions = filtered,
+            customCategories = customCategories,
             query = query,
             selectedFilter = filter,
             selectedCategory = category,

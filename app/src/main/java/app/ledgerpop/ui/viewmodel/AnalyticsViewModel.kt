@@ -6,10 +6,13 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.ui.state.AnalyticsUiState
+import app.ledgerpop.ui.state.AnalyticsViewType
 import app.ledgerpop.ui.state.CategorySummary
 import app.ledgerpop.ui.state.GroupingType
 import app.ledgerpop.ui.state.TrendSummary
@@ -30,6 +33,7 @@ private data class AnalyticsFilters(
     val start: Long?,
     val end: Long?,
     val groupBy: GroupingType,
+    val viewType: AnalyticsViewType,
     val category: String,
     val account: String
 )
@@ -41,6 +45,7 @@ class AnalyticsViewModel(
     private val _startDateMillis = MutableStateFlow<Long?>(null)
     private val _endDateMillis = MutableStateFlow<Long?>(null)
     private val _groupBy = MutableStateFlow(GroupingType.DAILY)
+    private val _viewType = MutableStateFlow(AnalyticsViewType.SPENDS)
     private val _selectedCategory = MutableStateFlow("All")
     private val _selectedAccount = MutableStateFlow("All")
 
@@ -54,30 +59,32 @@ class AnalyticsViewModel(
         _startDateMillis,
         _endDateMillis,
         _groupBy,
-        _selectedCategory,
-        _selectedAccount
-    ) { start, end, groupBy, category, account ->
-        AnalyticsFilters(start, end, groupBy, category, account)
+        _viewType,
+        combine(_selectedCategory, _selectedAccount) { c, a -> c to a }
+    ) { start, end, groupBy, viewType, catAcc ->
+        AnalyticsFilters(start, end, groupBy, viewType, catAcc.first, catAcc.second)
     }
 
     val uiState: StateFlow<AnalyticsUiState> = combine(
         repository.getAllTransactions(),
+        repository.getAllCustomCategories(),
         filters
-    ) { allTxns, f ->
+    ) { allTxns, customCategories, f ->
         val billableTxns = allTxns.filter { it.isBillable }
         
-        val cats = listOf("All") + billableTxns.map { it.category.ifBlank { "Other" } }.distinct().sorted()
+        val cats = listOf("All") + billableTxns.map { CategoryEngine.normalize(it.category) }.distinct().sorted()
         val accs = listOf("All") + billableTxns.map { it.accountHint.ifBlank { "Unknown" } }.distinct().sorted()
 
         var filteredTxns = billableTxns
         if (f.start != null) filteredTxns = filteredTxns.filter { it.transactionTime >= f.start }
         if (f.end != null) filteredTxns = filteredTxns.filter { it.transactionTime <= (f.end + 86400000L - 1) }
-        if (f.category != "All") filteredTxns = filteredTxns.filter { it.category.ifBlank { "Other" } == f.category }
+        if (f.category != "All") filteredTxns = filteredTxns.filter { CategoryEngine.normalize(it.category) == f.category }
         if (f.account != "All") filteredTxns = filteredTxns.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
 
         val income = filteredTxns.filter { it.type == "CREDIT" }.sumOf { it.amount }
         val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
         val debits = filteredTxns.filter { it.type == "DEBIT" }
+        val credits = filteredTxns.filter { it.type == "CREDIT" }
         val avg = if (debits.isNotEmpty()) debits.sumOf { it.amount } / debits.size else 0.0
 
         val trendFormat = formats[f.groupBy]!!
@@ -97,17 +104,31 @@ class AnalyticsViewModel(
                 )
             }
 
-        val categoryBreakdown = debits
-            .groupBy { it.category.ifBlank { "Other" } }
-            .map { (cat, txns) ->
-                val total = txns.sumOf { it.amount }
-                CategorySummary(
-                    category = cat,
-                    amount = total,
-                    percentage = if (expense > 0) (total / expense * 100).toFloat() else 0f
-                )
-            }
-            .sortedByDescending { it.amount }
+        val categoryBreakdown = if (f.viewType == AnalyticsViewType.SPENDS) {
+            debits
+                .groupBy { CategoryEngine.normalize(it.category) }
+                .map { (cat, txns) ->
+                    val total = txns.sumOf { it.amount }
+                    CategorySummary(
+                        category = cat,
+                        amount = total,
+                        percentage = if (expense > 0) (total / expense * 100).toFloat() else 0f
+                    )
+                }
+                .sortedByDescending { it.amount }
+        } else {
+            credits
+                .groupBy { CategoryEngine.normalize(it.category) }
+                .map { (cat, txns) ->
+                    val total = txns.sumOf { it.amount }
+                    CategorySummary(
+                        category = cat,
+                        amount = total,
+                        percentage = if (income > 0) (total / income * 100).toFloat() else 0f
+                    )
+                }
+                .sortedByDescending { it.amount }
+        }
 
         AnalyticsUiState(
             totalIncome = income,
@@ -117,10 +138,12 @@ class AnalyticsViewModel(
             avgDebit = avg,
             trendSummaries = trendSummaries,
             categoryBreakdown = categoryBreakdown,
+            customCategories = customCategories,
             isLoading = false,
             startDateMillis = f.start,
             endDateMillis = f.end,
             groupBy = f.groupBy,
+            viewType = f.viewType,
             selectedCategory = f.category,
             selectedAccount = f.account,
             availableCategories = cats,
@@ -128,7 +151,7 @@ class AnalyticsViewModel(
             filteredTransactions = filteredTxns.sortedByDescending { it.transactionTime }
         )
     }.stateIn(
-        scope = viewModelScope,
+     scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = AnalyticsUiState(isLoading = true)
     )
@@ -145,6 +168,7 @@ class AnalyticsViewModel(
     }
 
     fun setGroupingType(type: GroupingType) { _groupBy.value = type }
+    fun setViewType(type: AnalyticsViewType) { _viewType.value = type }
     fun setCategoryFilter(category: String) { _selectedCategory.value = category }
     fun setAccountFilter(account: String) { _selectedAccount.value = account }
 
@@ -154,6 +178,7 @@ class AnalyticsViewModel(
         _selectedCategory.value = "All"
         _selectedAccount.value = "All"
         _groupBy.value = GroupingType.DAILY
+        _viewType.value = AnalyticsViewType.SPENDS
     }
 
     fun openDrillDown(type: DrillDownType) {
@@ -169,9 +194,10 @@ class AnalyticsViewModel(
                 _drillDownTransactions.value = currentTxns.filter { it.type == "DEBIT" }
             }
             is DrillDownType.Category -> {
-                _drillDownTitle.value = "${type.categoryName} Expenses"
+                _drillDownTitle.value = "${type.categoryName} Details"
                 _drillDownTransactions.value = currentTxns.filter {
-                    it.type == "DEBIT" && it.category.ifBlank { "Other" } == type.categoryName
+                    val typeMatches = if (uiState.value.viewType == AnalyticsViewType.SPENDS) it.type == "DEBIT" else it.type == "CREDIT"
+                    typeMatches && CategoryEngine.normalize(it.category) == type.categoryName
                 }
             }
             is DrillDownType.Trend -> {
@@ -190,6 +216,18 @@ class AnalyticsViewModel(
         _drillDownTitle.value = ""
     }
 
+    fun saveTransaction(txn: SmsTransactionEntity) {
+        viewModelScope.launch {
+            repository.update(txn)
+        }
+    }
+
+    fun deleteTransaction(txn: SmsTransactionEntity) {
+        viewModelScope.launch {
+            repository.delete(txn)
+        }
+    }
+
     // ── Export Logic ──────────────────────────────────────────────────────────
 
     fun exportToCsv(context: Context) {
@@ -199,10 +237,10 @@ class AnalyticsViewModel(
                 val txns = state.filteredTransactions
                 if (txns.isEmpty()) return@launch
 
-                val csvHeader = "DATE,TIME,MERCHANT,AMOUNT,DR/CR,ACCOUNT,EXPENSE,INCOME,CATEGORY,NOTE\n"
-
-                val dateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+                val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                 val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+                val csvHeader = "DATE,TIME,MERCHANT,AMOUNT,DR/CR,ACCOUNT,EXPENSE,INCOME,CATEGORY,NOTE\n"
 
                 val csvData = StringBuilder(csvHeader)
                 txns.forEach { txn ->
@@ -219,7 +257,7 @@ class AnalyticsViewModel(
                     val isIncomeReported = if (txn.isBillable && txn.type == "CREDIT") "Yes" else "No"
 
                     val category = "\"${txn.category.ifBlank { "Other" }.replace("\"", "\"\"")}\""
-                    val note = if (txn.sender == "Manual") "\"Manual Entry\"" else "\"SMS Import\""
+                    val note = "\"${txn.note.replace("\"", "\"\"")}\""
 
                     csvData.append("$date,$time,$merchant,$amount,$drCr,$account,$isExpenseReported,$isIncomeReported,$category,$note\n")
                 }

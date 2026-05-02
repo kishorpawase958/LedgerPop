@@ -1,5 +1,6 @@
 package app.ledgerpop.screens.transactions
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -8,14 +9,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.CustomCategoryEntity
 
 @Composable
 fun CategoryAccountPicker(
@@ -23,9 +29,12 @@ fun CategoryAccountPicker(
     options: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    customCategories: List<CustomCategoryEntity> = emptyList(),
+    onUpdateEmoji: ((String, String) -> Unit)? = null
 ) {
     var newValue by remember { mutableStateOf("") }
+    var editingEmojiFor by remember { mutableStateOf<String?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -97,8 +106,13 @@ fun CategoryAccountPicker(
                         )
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                         items(allOptions) { option ->
+                            val isCategory = title.contains("Category", ignoreCase = true)
+                            val currentEmoji = if (isCategory) {
+                                customCategories.find { it.name == option }?.emoji ?: CategoryEngine.emoji(option, customCategories)
+                            } else null
+
                             Column {
                                 Row(
                                     modifier = Modifier
@@ -108,23 +122,46 @@ fun CategoryAccountPicker(
                                             onSelect(option)
                                             onDismiss()
                                         }
-                                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                                        .padding(vertical = 8.dp, horizontal = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = option,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = if (option == selected) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    if (option == selected) {
-                                        Icon(
-                                            Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        if (currentEmoji != null) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                                    .clickable { editingEmojiFor = option },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(currentEmoji, fontSize = 18.sp)
+                                            }
+                                            Spacer(Modifier.width(12.dp))
+                                        }
+                                        Text(
+                                            text = option,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (option == selected) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isCategory && onUpdateEmoji != null) {
+                                            IconButton(onClick = { editingEmojiFor = option }) {
+                                                Icon(Icons.Rounded.Edit, contentDescription = "Edit Emoji", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
+                                            }
+                                        }
+                                        if (option == selected) {
+                                            Icon(
+                                                Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
                                 }
                                 if (option != allOptions.last()) {
@@ -147,5 +184,33 @@ fun CategoryAccountPicker(
                 }
             }
         }
+    }
+
+    editingEmojiFor?.let { categoryName ->
+        var tempEmoji by remember { mutableStateOf(customCategories.find { it.name == categoryName }?.emoji ?: CategoryEngine.emoji(categoryName, customCategories)) }
+        AlertDialog(
+            onDismissRequest = { editingEmojiFor = null },
+            title = { Text("Edit Emoji for $categoryName") },
+            text = {
+                OutlinedTextField(
+                    value = tempEmoji,
+                    onValueChange = { tempEmoji = it },
+                    label = { Text("Emoji") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    onUpdateEmoji?.invoke(categoryName, tempEmoji)
+                    editingEmojiFor = null
+                }) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingEmojiFor = null }) { Text("Cancel") }
+            }
+        )
     }
 }

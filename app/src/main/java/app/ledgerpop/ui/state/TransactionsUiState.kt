@@ -1,10 +1,12 @@
 package app.ledgerpop.ui.state
 
+import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.SmsTransactionEntity
 
 data class TransactionsUiState(
     val allTransactions: List<SmsTransactionEntity> = emptyList(),
     val filteredTransactions: List<SmsTransactionEntity> = emptyList(),
+    val customCategories: List<CustomCategoryEntity> = emptyList(),
     val query: String = "",
     val selectedFilter: String = "All",
     val selectedCategory: String = "All",

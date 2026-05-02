@@ -19,5 +19,7 @@ class TransactionRepository(
     suspend fun delete(txn: SmsTransactionEntity) = dao.delete(txn)
     suspend fun insert(txn: SmsTransactionEntity) = dao.insert(txn)
 
+    fun getAllCustomCategories() = categoryDao.getAllCategories()
+
 
 }

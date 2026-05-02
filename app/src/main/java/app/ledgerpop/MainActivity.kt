@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.screens.analytics.AnalyticsScreen
 import app.ledgerpop.screens.home.HomeScreen
+import app.ledgerpop.screens.settings.CategoryManagementScreen
 import app.ledgerpop.screens.settings.PermissionsScreen
 import app.ledgerpop.screens.settings.SettingsScreen
 import app.ledgerpop.screens.settings.SmsAuditScreen
@@ -51,6 +54,7 @@ sealed class Screen(val route: String) {
     object Settings : Screen("settings")
     object SmsAudit : Screen("sms_audit")
     object Permissions : Screen("permissions")
+    object Categories : Screen("categories")
 }
 
 data class BottomNavItem(
@@ -135,6 +139,9 @@ fun LedgerPopApp() {
                             },
                             onNavigateToPermissions = {
                                 navController.navigate(Screen.Permissions.route)
+                            },
+                            onNavigateToCategories = {
+                                navController.navigate(Screen.Categories.route)
                             }
                         )
                     }
@@ -147,6 +154,12 @@ fun LedgerPopApp() {
 
                     composable(Screen.Permissions.route) {
                         PermissionsScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(Screen.Categories.route) {
+                        CategoryManagementScreen(
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -170,8 +183,8 @@ fun LedgerPopApp() {
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(72.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .height(80.dp)
+                            .clip(RoundedCornerShape(24.dp))
                             .hazeEffect(
                                 state = hazeState,
                                 style = HazeDefaults.style(
@@ -180,7 +193,7 @@ fun LedgerPopApp() {
                                     tint = HazeDefaults.tint(MaterialTheme.colorScheme.surface.copy(alpha = 0.25f))
                                 )
                             ),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(24.dp),
                         color = Color.Transparent,
                         tonalElevation = 8.dp,
                         border = androidx.compose.foundation.BorderStroke(
@@ -189,30 +202,59 @@ fun LedgerPopApp() {
                         )
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             bottomNavItems.forEach { item ->
                                 val selected = currentRoute == item.screen.route
-                                val contentColor = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                }
+                                val contentColor by animateColorAsState(
+                                    targetValue = if (selected) MaterialTheme.colorScheme.primary 
+                                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    label = "nav_item_color"
+                                )
 
-                                IconButton(
-                                    onClick = {
-                                        navController.navigate(item.screen.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(64.dp)
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .clickable {
+                                            if (!selected) {
+                                                navController.navigate(item.screen.route) {
+                                                    popUpTo(navController.graph.findStartDestination().id) {
+                                                        saveState = true
+                                                    }
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
+                                        },
+                                    contentAlignment = Alignment.Center
                                 ) {
+                                    if (selected) {
+                                        // The Glass Plate (Nested Haze Effect)
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .hazeEffect(
+                                                    state = hazeState,
+                                                    style = HazeDefaults.style(
+                                                        backgroundColor = MaterialTheme.colorScheme.surface,
+                                                        blurRadius = 15.dp,
+                                                        tint = HazeDefaults.tint(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                                    )
+                                                )
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))
+                                                .border(
+                                                    0.5.dp,
+                                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                                    RoundedCornerShape(16.dp)
+                                                )
+                                        )
+                                    }
+
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
@@ -221,17 +263,14 @@ fun LedgerPopApp() {
                                             imageVector = item.icon,
                                             contentDescription = item.label,
                                             tint = contentColor,
-                                            modifier = Modifier.size(26.dp)
+                                            modifier = Modifier.size(24.dp)
                                         )
-                                        if (selected) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .padding(top = 4.dp)
-                                                    .size(4.dp)
-                                                    .clip(RoundedCornerShape(50))
-                                                    .background(contentColor)
-                                            )
-                                        }
+                                        Text(
+                                            text = item.label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = contentColor,
+                                            maxLines = 1
+                                        )
                                     }
                                 }
                             }
