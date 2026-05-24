@@ -1,5 +1,6 @@
 package app.ledgerpop.ui.state
 
+import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.sms.ImportResult
 
@@ -21,5 +22,6 @@ data class SettingsUiState(
     val hasReadSmsPermission: Boolean = false,
     val hasReceiveSmsPermission: Boolean = false,
     val appTheme: AppTheme = AppTheme.AUTO,
-    val customCategories: List<CustomCategoryEntity> = emptyList()
+    val customCategories: List<CustomCategoryEntity> = emptyList(),
+    val accounts: List<AccountEntity> = emptyList()
 )

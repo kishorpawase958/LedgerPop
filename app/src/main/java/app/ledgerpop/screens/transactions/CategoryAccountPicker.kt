@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 
 @Composable
@@ -31,6 +32,7 @@ fun CategoryAccountPicker(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
     customCategories: List<CustomCategoryEntity> = emptyList(),
+    accounts: List<AccountEntity> = emptyList(),
     onUpdateEmoji: ((String, String) -> Unit)? = null
 ) {
     var newValue by remember { mutableStateOf("") }
@@ -109,9 +111,13 @@ fun CategoryAccountPicker(
                     LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                         items(allOptions) { option ->
                             val isCategory = title.contains("Category", ignoreCase = true)
-                            val currentEmoji = if (isCategory) {
-                                customCategories.find { it.name == option }?.emoji ?: CategoryEngine.emoji(option, customCategories)
-                            } else null
+                            val isAccount = title.contains("Account", ignoreCase = true)
+                            
+                            val currentEmoji = when {
+                                isCategory -> customCategories.find { it.name == option }?.emoji ?: CategoryEngine.emoji(option, customCategories)
+                                isAccount -> accounts.find { it.name == option }?.icon ?: "🏦"
+                                else -> null
+                            }
 
                             Column {
                                 Row(
@@ -149,7 +155,7 @@ fun CategoryAccountPicker(
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (isCategory && onUpdateEmoji != null) {
+                                        if ((isCategory || isAccount) && onUpdateEmoji != null) {
                                             IconButton(onClick = { editingEmojiFor = option }) {
                                                 Icon(Icons.Rounded.Edit, contentDescription = "Edit Emoji", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
                                             }
@@ -186,11 +192,18 @@ fun CategoryAccountPicker(
         }
     }
 
-    editingEmojiFor?.let { categoryName ->
-        var tempEmoji by remember { mutableStateOf(customCategories.find { it.name == categoryName }?.emoji ?: CategoryEngine.emoji(categoryName, customCategories)) }
+    editingEmojiFor?.let { optionName ->
+        val isCategory = title.contains("Category", ignoreCase = true)
+        val initialEmoji = if (isCategory) {
+            customCategories.find { it.name == optionName }?.emoji ?: CategoryEngine.emoji(optionName, customCategories)
+        } else {
+            accounts.find { it.name == optionName }?.icon ?: "🏦"
+        }
+        
+        var tempEmoji by remember { mutableStateOf(initialEmoji) }
         AlertDialog(
             onDismissRequest = { editingEmojiFor = null },
-            title = { Text("Edit Emoji for $categoryName") },
+            title = { Text("Edit Emoji for $optionName") },
             text = {
                 OutlinedTextField(
                     value = tempEmoji,
@@ -202,7 +215,7 @@ fun CategoryAccountPicker(
             },
             confirmButton = {
                 Button(onClick = {
-                    onUpdateEmoji?.invoke(categoryName, tempEmoji)
+                    onUpdateEmoji?.invoke(optionName, tempEmoji)
                     editingEmojiFor = null
                 }) {
                     Text("Save")

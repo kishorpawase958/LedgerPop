@@ -9,9 +9,11 @@ import androidx.room.RoomDatabase
     entities = [
         SmsTransactionEntity::class,
         SmsAuditEntity::class,
-        CustomCategoryEntity::class
+        CustomCategoryEntity::class,
+        AccountEntity::class,
+        AccountAliasEntity::class
     ],
-    version = 4, // bumped from 3
+    version = 6, // bumped from 5
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -19,6 +21,8 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun smsTransactionDao(): SmsTransactionDao
     abstract fun smsAuditDao(): SmsAuditDao
     abstract fun customCategoryDao(): CustomCategoryDao
+    abstract fun accountDao(): AccountDao
+    abstract fun accountAliasDao(): AccountAliasDao
 
     companion object {
         @Volatile

@@ -8,6 +8,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.ledgerpop.data.local.AccountEntity
+import app.ledgerpop.data.local.AccountAliasEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
@@ -55,7 +57,9 @@ class SettingsViewModel(
         appContext,
         SmsReader(appContext),
         db.smsTransactionDao(),
-        db.smsAuditDao()
+        db.smsAuditDao(),
+        db.accountAliasDao(),
+        db.accountDao()
     )
 
     init {
@@ -70,6 +74,26 @@ class SettingsViewModel(
         viewModelScope.launch {
             db.customCategoryDao().getAllCategories().collect { list ->
                 _uiState.update { it.copy(customCategories = list) }
+            }
+        }
+        // Observe accounts
+        viewModelScope.launch {
+            db.accountDao().getAllAccounts().collect { list ->
+                _uiState.update { it.copy(accounts = list) }
+            }
+        }
+        syncAccountsFromTransactions()
+    }
+
+    private fun syncAccountsFromTransactions() {
+        viewModelScope.launch {
+            val accountNames = db.smsTransactionDao().getAllAccounts()
+            val existingAccounts = db.accountDao().getAllSync().map { it.name }
+            accountNames.forEach { name ->
+                val resolved = db.accountAliasDao().getTargetName(name) ?: name
+                if (db.accountDao().getByName(resolved) == null) {
+                    db.accountDao().insert(AccountEntity(name = resolved))
+                }
             }
         }
     }
@@ -182,6 +206,83 @@ class SettingsViewModel(
         }
     }
 
+    fun updateAccount(id: Int, newName: String, newIcon: String) {
+        viewModelScope.launch {
+            val accounts = db.accountDao().getAllSync()
+            val existing = accounts.find { it.id == id } ?: return@launch
+            val oldName = existing.name
+
+            // 1. Update the account itself
+            db.accountDao().insert(existing.copy(name = newName, icon = newIcon))
+
+            // 2. If name changed, update transactions and aliases
+            if (oldName != newName) {
+                db.smsTransactionDao().updateAccountName(oldName, newName)
+                
+                // Update existing aliases that pointed to the old name
+                val aliases = db.accountAliasDao().getAllAliases()
+                aliases.forEach {
+                    if (it.targetAccountName == oldName) {
+                        db.accountAliasDao().insert(it.copy(targetAccountName = newName))
+                    }
+                }
+                
+                // Add an alias from oldName to newName so future imports match
+                db.accountAliasDao().insert(AccountAliasEntity(oldName, newName))
+            }
+        }
+    }
+
+    fun mergeAccounts(sourceAccountId: Int, targetAccountId: Int) {
+        viewModelScope.launch {
+            val accounts = db.accountDao().getAllSync()
+            val source = accounts.find { it.id == sourceAccountId } ?: return@launch
+            val target = accounts.find { it.id == targetAccountId } ?: return@launch
+
+            if (source.id == target.id) return@launch
+
+            // 1. Update transactions
+            db.smsTransactionDao().updateAccountName(source.name, target.name)
+
+            // 2. Update existing aliases that pointed to the source
+            val aliases = db.accountAliasDao().getAllAliases()
+            aliases.forEach {
+                if (it.targetAccountName == source.name) {
+                    db.accountAliasDao().insert(it.copy(targetAccountName = target.name))
+                }
+            }
+
+            // 3. Add new alias from source to target
+            db.accountAliasDao().insert(AccountAliasEntity(source.name, target.name))
+
+            // 4. Delete source account
+            db.accountDao().deleteById(sourceAccountId)
+        }
+    }
+
+    fun updateAccountIcon(accountName: String, icon: String) {
+        viewModelScope.launch {
+            val existing = db.accountDao().getByName(accountName)
+            if (existing != null) {
+                db.accountDao().insert(existing.copy(icon = icon))
+            } else {
+                db.accountDao().insert(AccountEntity(name = accountName, icon = icon))
+            }
+        }
+    }
+
+    fun addAccount(name: String, icon: String) {
+        viewModelScope.launch {
+            db.accountDao().insert(AccountEntity(name = name, icon = icon))
+        }
+    }
+
+    fun deleteAccount(id: Int) {
+        viewModelScope.launch {
+            db.accountDao().deleteById(id)
+        }
+    }
+
     fun clearImportResult() {
         _uiState.update { it.copy(lastImportResult = null, lastImportMessage = "") }
     }
@@ -193,6 +294,7 @@ class SettingsViewModel(
                 db.smsTransactionDao().deleteAll()
                 db.smsAuditDao().deleteAll()
                 db.customCategoryDao().deleteAll()
+                db.accountDao().deleteAll()
                 _uiState.update { it.copy(isClearing = false, lastImportMessage = "All data cleared successfully.") }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isClearing = false, lastImportMessage = "Clear failed: ${e.message}") }
@@ -268,6 +370,17 @@ class SettingsViewModel(
                     categoriesArray.put(obj)
                 }
                 root.put("customCategories", categoriesArray)
+
+                // 5. Accounts
+                val accounts = db.accountDao().getAllSync()
+                val accountsArray = JSONArray()
+                accounts.forEach { acc ->
+                    val obj = JSONObject()
+                    obj.put("name", acc.name)
+                    obj.put("icon", acc.icon)
+                    accountsArray.put(obj)
+                }
+                root.put("accounts", accountsArray)
 
                 // Write to file
                 context.contentResolver.openOutputStream(uri)?.use { output ->
@@ -383,6 +496,22 @@ class SettingsViewModel(
                     }
                     db.customCategoryDao().deleteAll()
                     categories.forEach { db.customCategoryDao().insert(it) }
+                }
+
+                // 5. Restore Accounts
+                val accountsArray = root.optJSONArray("accounts")
+                if (accountsArray != null) {
+                    val accounts = mutableListOf<AccountEntity>()
+                    for (i in 0 until accountsArray.length()) {
+                        val obj = accountsArray.getJSONObject(i)
+                        accounts.add(AccountEntity(
+                            id = 0,
+                            name = obj.getString("name"),
+                            icon = obj.getString("icon")
+                        ))
+                    }
+                    db.accountDao().deleteAll()
+                    accounts.forEach { db.accountDao().insert(it) }
                 }
 
                 withContext(Dispatchers.Main) {

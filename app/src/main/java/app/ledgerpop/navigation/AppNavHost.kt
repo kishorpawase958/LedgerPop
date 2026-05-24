@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import app.ledgerpop.screens.settings.AccountManagementScreen
 import app.ledgerpop.screens.settings.CategoryManagementScreen
 import app.ledgerpop.screens.settings.PermissionsScreen
 import app.ledgerpop.screens.settings.SettingsScreen
@@ -11,16 +12,17 @@ import app.ledgerpop.screens.settings.SmsAuditScreen
 
 @Composable
 fun AppNavHost(navController: NavHostController) {
-    NavHost(navController, startDestination = "home") {
-        composable("home") {
-            // Home screen
+    NavHost(navController, startDestination = NavRoutes.HOME) {
+        composable(NavRoutes.HOME) {
+            // Home screen handled in MainActivity usually
         }
 
-        composable("settings") {
+        composable(NavRoutes.SETTINGS) {
             SettingsScreen(
                 onNavigateToPermissions = { navController.navigate("permissions") },
                 onNavigateToSmsAudit = { navController.navigate("sms_audit") },
-                onNavigateToCategories = { navController.navigate("categories") }
+                onNavigateToCategories = { navController.navigate(NavRoutes.CATEGORIES) },
+                onNavigateToAccounts = { navController.navigate(NavRoutes.ACCOUNTS) }
             )
         }
 
@@ -30,13 +32,18 @@ fun AppNavHost(navController: NavHostController) {
             )
         }
 
-        composable("categories") {
+        composable(NavRoutes.CATEGORIES) {
             CategoryManagementScreen(
                 onBack = { navController.popBackStack() }
             )
         }
 
-        // SMS Audit route (reuses existing screen)
+        composable(NavRoutes.ACCOUNTS) {
+            AccountManagementScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable("sms_audit") {
             SmsAuditScreen(
                 onBack = { navController.popBackStack() }

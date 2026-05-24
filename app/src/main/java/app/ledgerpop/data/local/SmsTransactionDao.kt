@@ -47,4 +47,7 @@ interface SmsTransactionDao {
 
     @Query("SELECT DISTINCT accountHint FROM sms_transactions WHERE accountHint != ''")
     suspend fun getAllAccounts(): List<String>
+
+    @Query("UPDATE sms_transactions SET accountHint = :targetName WHERE accountHint = :sourceName")
+    suspend fun updateAccountName(sourceName: String, targetName: String)
 }

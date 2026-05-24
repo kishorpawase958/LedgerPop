@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.data.category.CategoryEngine
+import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
@@ -46,6 +47,10 @@ fun AddTransactionSheet(
         db.customCategoryDao().getAllCategories().collect { value = it }
     }
     
+    val accounts by produceState(initialValue = emptyList<AccountEntity>()) {
+        db.accountDao().getAllAccounts().collect { value = it }
+    }
+    
     var isExpense by remember { mutableStateOf(true) }
 
     val categories = remember(isExpense, existingTransactions, customCategories) {
@@ -59,8 +64,10 @@ fun AddTransactionSheet(
         (engineCats + customOfType + existingOfType).distinct().sorted()
     }
     
-    val existingAccounts = remember(existingTransactions) {
-        existingTransactions.map { it.accountHint }.filter { it.isNotBlank() }.distinct().sorted()
+    val accountOptions = remember(accounts, existingTransactions) {
+        val managed = accounts.map { it.name }
+        val existing = existingTransactions.map { it.accountHint }.filter { it.isNotBlank() }
+        (managed + existing).distinct().sorted()
     }
     var amount by remember { mutableStateOf("") }
     var merchant by remember { mutableStateOf("") }
@@ -421,10 +428,21 @@ fun AddTransactionSheet(
     if (showAccountPicker) {
         CategoryAccountPicker(
             title = "Select Account",
-            options = existingAccounts,
+            options = accountOptions,
             selected = accountHint,
             onSelect = { accountHint = it },
-            onDismiss = { showAccountPicker = false }
+            onDismiss = { showAccountPicker = false },
+            accounts = accounts,
+            onUpdateEmoji = { name, icon ->
+                scope.launch {
+                    val existing = db.accountDao().getByName(name)
+                    if (existing != null) {
+                        db.accountDao().insert(existing.copy(icon = icon))
+                    } else {
+                        db.accountDao().insert(AccountEntity(name = name, icon = icon))
+                    }
+                }
+            }
         )
     }
 }

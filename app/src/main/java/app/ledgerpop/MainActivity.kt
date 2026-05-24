@@ -39,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.screens.analytics.AnalyticsScreen
 import app.ledgerpop.screens.home.HomeScreen
+import app.ledgerpop.screens.settings.AccountManagementScreen
 import app.ledgerpop.screens.settings.CategoryManagementScreen
 import app.ledgerpop.screens.settings.PermissionsScreen
 import app.ledgerpop.screens.settings.SettingsScreen
@@ -55,6 +56,7 @@ sealed class Screen(val route: String) {
     object SmsAudit : Screen("sms_audit")
     object Permissions : Screen("permissions")
     object Categories : Screen("categories")
+    object Accounts : Screen("accounts")
 }
 
 data class BottomNavItem(
@@ -142,6 +144,9 @@ fun LedgerPopApp() {
                             },
                             onNavigateToCategories = {
                                 navController.navigate(Screen.Categories.route)
+                            },
+                            onNavigateToAccounts = {
+                                navController.navigate(Screen.Accounts.route)
                             }
                         )
                     }
@@ -160,6 +165,12 @@ fun LedgerPopApp() {
 
                     composable(Screen.Categories.route) {
                         CategoryManagementScreen(
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(Screen.Accounts.route) {
+                        AccountManagementScreen(
                             onBack = { navController.popBackStack() }
                         )
                     }

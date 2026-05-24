@@ -211,7 +211,7 @@ fun AnalyticsScreen() {
                                 ) {
                                     uiState.availableCategories.forEach { cat ->
                                         DropdownMenuItem(
-                                            text = { 
+                                            text = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     if (cat != "All") {
                                                         Text(CategoryEngine.emoji(cat, uiState.customCategories))
@@ -344,11 +344,11 @@ fun AnalyticsScreen() {
             // ── Category Breakdown (Clickable) ────────────────────────────────
             if (uiState.categoryBreakdown.isNotEmpty()) {
                 item {
-                    val breakdownTitle = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) 
-                        "Spending by Category" 
-                    else 
+                    val breakdownTitle = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
+                        "Spending by Category"
+                    else
                         "Income by Category"
-                    
+
                     Text(
                         breakdownTitle,
                         style = MaterialTheme.typography.titleMedium,
@@ -545,14 +545,14 @@ private fun CategoryRow(
     viewType: app.ledgerpop.ui.state.AnalyticsViewType = app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
     onClick: () -> Unit
 ) {
-    val amountColor = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) 
-        MaterialTheme.colorScheme.error 
-    else 
+    val amountColor = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
+        MaterialTheme.colorScheme.error
+    else
         Color(0xFF00B894)
-    
-    val labelText = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) 
-        "of expenses" 
-    else 
+
+    val labelText = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
+        "of expenses"
+    else
         "of income"
 
     Card(

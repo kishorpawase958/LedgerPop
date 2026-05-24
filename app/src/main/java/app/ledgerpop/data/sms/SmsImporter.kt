@@ -21,10 +21,24 @@ class SmsImporter(
     private val context: Context,
     private val smsReader: SmsReader,
     private val dao: SmsTransactionDao,
-    private val auditDao: SmsAuditDao
+    private val auditDao: SmsAuditDao,
+    private val aliasDao: app.ledgerpop.data.local.AccountAliasDao? = null,
+    private val accountDao: app.ledgerpop.data.local.AccountDao? = null
 ) {
 
     private val TAG = "LedgerPop"
+
+    private suspend fun resolveAccountName(name: String): String {
+        if (name.isBlank()) return ""
+        val target = aliasDao?.getTargetName(name) ?: name
+        // Auto-create account if it doesn't exist
+        if (target.isNotBlank() && accountDao != null) {
+            if (accountDao.getByName(target) == null) {
+                accountDao.insert(app.ledgerpop.data.local.AccountEntity(name = target))
+            }
+        }
+        return target
+    }
 
     suspend fun importInbox(
         fromMillis: Long? = null,
@@ -104,7 +118,7 @@ class SmsImporter(
                     merchant = parsed.merchant,
                     category = parsed.category,
                     bank = parsed.bank,
-                    accountHint = parsed.accountName,
+                    accountHint = resolveAccountName(parsed.accountName),
                     isBillable = true,
                     transactionTime = msg.timestamp,
                     hashKey = hashKey
@@ -204,7 +218,7 @@ class SmsImporter(
             bank = parsed.bank,
 
             // Map the newly extracted Account string: "SBI (3456)" instead of just the last 4
-            accountHint = parsed.accountName,
+            accountHint = resolveAccountName(parsed.accountName),
 
             isBillable = true,
             transactionTime = msg.timestamp,

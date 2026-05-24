@@ -737,7 +737,7 @@ fun QuickCategoryUpdateDialog(
                         FilterChip(
                             selected = selectedCategory == cat,
                             onClick = { selectedCategory = cat },
-                            label = { 
+                            label = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = CategoryEngine.emoji(cat, customCategories),

@@ -41,6 +41,7 @@ fun SettingsScreen(
     onNavigateToPermissions: () -> Unit,
     onNavigateToSmsAudit: () -> Unit,
     onNavigateToCategories: () -> Unit,
+    onNavigateToAccounts: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -138,7 +139,8 @@ fun SettingsScreen(
             appTheme = uiState.appTheme,
             onThemeClick = { showThemeDialog = true },
             onPermissionsClick = onNavigateToPermissions,
-            onCategoriesClick = onNavigateToCategories
+            onCategoriesClick = onNavigateToCategories,
+            onAccountsClick = onNavigateToAccounts
         )
 
         DataImportSection(
@@ -247,7 +249,8 @@ private fun PreferencesSection(
     appTheme: AppTheme,
     onThemeClick: () -> Unit,
     onPermissionsClick: () -> Unit,
-    onCategoriesClick: () -> Unit
+    onCategoriesClick: () -> Unit,
+    onAccountsClick: () -> Unit
 ) {
     SectionCard(title = "Preferences") {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -256,6 +259,13 @@ private fun PreferencesSection(
                     icon = Icons.Rounded.Palette,
                     title = "App Theme",
                     subtitle = appTheme.name.lowercase().replaceFirstChar { it.uppercase() }
+                )
+            }
+            MiniCard(onClick = onAccountsClick) {
+                SettingRow(
+                    icon = Icons.Rounded.AccountBalance,
+                    title = "Accounts",
+                    subtitle = "Manage your banks and wallets"
                 )
             }
             MiniCard(onClick = onCategoriesClick) {
