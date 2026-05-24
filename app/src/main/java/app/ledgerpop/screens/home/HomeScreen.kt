@@ -39,6 +39,7 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionSheet
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
 import app.ledgerpop.ui.viewmodel.HomeViewModel
+import app.ledgerpop.ui.viewmodel.CategoryAggregate
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -74,7 +75,7 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
-            contentPadding = PaddingValues(bottom = 96.dp)
+            contentPadding = PaddingValues(bottom = 220.dp)
         ) {
             // ── Greeting
             item {
@@ -89,7 +90,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Your Overview",
+                        text = "Monthly Overview",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -101,9 +102,9 @@ fun HomeScreen(
             // ── Balance ring card
             item {
                 BalanceRingCard(
-                    totalBalance = uiState.totalBalance,
-                    totalIncome = uiState.totalIncome,
-                    totalExpense = uiState.totalExpense
+                    totalBalance = uiState.thisMonthBalance,
+                    totalIncome = uiState.thisMonthIncome,
+                    totalExpense = uiState.thisMonthExpense
                 )
                 Spacer(Modifier.height(16.dp))
             }
@@ -136,35 +137,57 @@ fun HomeScreen(
                 item { Spacer(Modifier.height(16.dp)) }
             }
 
-            // ── Recent header
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            // ── Top Categories
+            if (uiState.topCategories.isNotEmpty()) {
+                item {
                     Text(
-                        text = "Recent",
+                        text = "Top Spending Categories",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    Text(
-                        text = "See All",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { onNavigateToTransactions() }
-                            .padding(4.dp)
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                     )
                 }
+                items(uiState.topCategories) { aggregate ->
+                    CategoryHighlightRow(
+                        aggregate = aggregate,
+                        customCategories = customCategories,
+                        onClick = { /* Clicking category highlight */ }
+                    )
+                }
+                item { Spacer(Modifier.height(16.dp)) }
             }
 
-            // ── Transactions list
-            if (uiState.recentTransactions.isEmpty()) {
+            // ── Highest Transactions
+            if (uiState.topTransactions.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Highest Transactions",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        TextButton(onClick = onNavigateToTransactions) {
+                            Text("View All")
+                        }
+                    }
+                }
+                items(uiState.topTransactions) { txn ->
+                    HomeTransactionRow(
+                        txn = txn,
+                        customCategories = customCategories,
+                        onClick = { selectedTxn = txn },
+                        onCategoryClick = { quickCategoryTxn = txn }
+                    )
+                }
+            } else {
                 item {
                     Box(
                         modifier = Modifier
@@ -181,29 +204,12 @@ fun HomeScreen(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "No transactions yet",
+                                "No transactions this month",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Text(
-                                "Go to Settings → Import SMS",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
                         }
                     }
-                }
-            } else {
-                items(
-                    items = uiState.recentTransactions,
-                    key = { it.id }
-                ) { txn ->
-                    HomeTransactionRow(
-                        txn = txn,
-                        customCategories = customCategories,
-                        onClick = { selectedTxn = txn },
-                        onCategoryClick = { quickCategoryTxn = txn }
-                    )
                 }
             }
         }
@@ -298,7 +304,7 @@ private fun HomeTransactionRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+            .background(MaterialTheme.colorScheme.surface)
             .clickable { onClick() }
             .alpha(if (isBillable) 1f else 0.45f)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -385,6 +391,53 @@ private fun HomeTransactionRow(
             fontWeight = FontWeight.SemiBold,
             color = if (isBillable) amountColor
             else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ── Category Highlight Row ───────────────────────────────────────────────────
+
+@Composable
+private fun CategoryHighlightRow(
+    aggregate: CategoryAggregate,
+    customCategories: List<CustomCategoryEntity>,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = CategoryEngine.emoji(aggregate.category, customCategories),
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = aggregate.category,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "₹${"%,.0f".format(aggregate.amount)}",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error
         )
     }
 }

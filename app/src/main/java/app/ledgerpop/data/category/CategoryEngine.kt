@@ -144,8 +144,7 @@ object CategoryEngine {
     }
 
     fun emoji(category: String, customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity> = emptyList()): String {
-        val custom = customCategories.find { it.name.equals(category, ignoreCase = true) }
-        if (custom != null) return custom.emoji
+        customCategories.find { it.name.equals(category, ignoreCase = true) }?.let { return it.emoji }
 
         return when (normalize(category)) {
             FOOD -> "🍔"
@@ -180,7 +179,7 @@ object CategoryEngine {
             cat.contains("BILL") || cat.contains("UTILITY") || cat.contains("RECHARGE") -> BILLS
             cat.contains("HEALTH") || cat.contains("MEDICAL") || cat.contains("HOSPITAL") -> HEALTH
             cat.contains("INSURANCE") -> INSURANCE
-            cat.contains("INVESTMENT") || cat.contains("STOCK") || cat.contains("MUTUAL FUND") || cat.equals("CREDIT") -> INVESTMENTS
+            cat.contains("INVESTMENT") || cat.contains("STOCK") || cat.contains("MUTUAL FUND") || cat == "CREDIT" -> INVESTMENTS
             cat.contains("MOVIE") || cat.contains("ENTERTAINMENT") -> ENTERTAINMENT
             cat.contains("EMI") || cat.contains("LOAN") -> EMI
             cat.contains("SALARY") -> SALARY
@@ -188,13 +187,9 @@ object CategoryEngine {
             cat.contains("DIVIDEND") -> DIVIDEND
             cat.contains("REFUND") -> REFUND
             cat.contains("TRANSFER") -> TRANSFER
-            cat == "OTHER" || cat.isBlank() -> OTHER
+            (cat == "OTHER" || cat.isBlank()) -> OTHER
             else -> category
         }
-    }
-
-    fun allCategories(customCategories: List<CustomCategory> = emptyList()): List<String> {
-        return debitCategories(customCategories) + creditCategories(customCategories).filter { it != OTHER && it != TRANSFER }
     }
 
     fun debitCategories(customCategories: List<CustomCategory> = emptyList()): List<String> {

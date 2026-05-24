@@ -23,5 +23,5 @@ data class SettingsUiState(
     val hasReceiveSmsPermission: Boolean = false,
     val appTheme: AppTheme = AppTheme.AUTO,
     val customCategories: List<CustomCategoryEntity> = emptyList(),
-    val accounts: List<AccountEntity> = emptyList()
+    val accounts: List<AccountEntity> = emptyList(),
 )

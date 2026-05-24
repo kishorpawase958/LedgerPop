@@ -6,9 +6,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,12 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,8 +35,6 @@ import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.state.CategorySummary
-import app.ledgerpop.ui.state.GroupingType
-import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.viewmodel.AnalyticsViewModel
 import app.ledgerpop.ui.viewmodel.DrillDownType
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
@@ -44,7 +42,7 @@ import app.ledgerpop.screens.transactions.QuickCategoryUpdateDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.max
+import kotlin.math.atan2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,7 +73,7 @@ fun AnalyticsScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
-            contentPadding = PaddingValues(bottom = 96.dp)
+            contentPadding = PaddingValues(bottom = 220.dp)
         ) {
             // ── Header & Filter Toggle ────────────────────────────────────────
             item {
@@ -165,99 +163,37 @@ fun AnalyticsScreen() {
                             Text(dateText)
                         }
 
-                        // Group By Segmented Button
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            SegmentedButton(
-                                selected = uiState.groupBy == GroupingType.DAILY,
-                                onClick = { viewModel.setGroupingType(GroupingType.DAILY) },
-                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
-                            ) { Text("Daily") }
-                            SegmentedButton(
-                                selected = uiState.groupBy == GroupingType.WEEKLY,
-                                onClick = { viewModel.setGroupingType(GroupingType.WEEKLY) },
-                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
-                            ) { Text("Weekly") }
-                            SegmentedButton(
-                                selected = uiState.groupBy == GroupingType.MONTHLY,
-                                onClick = { viewModel.setGroupingType(GroupingType.MONTHLY) },
-                                shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
-                            ) { Text("Monthly") }
-                        }
+                        // Account Dropdown
+                        var accExpanded by remember { mutableStateOf(false) }
 
-                        // Dropdowns for Category and Account
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            var catExpanded by remember { mutableStateOf(false) }
-                            var accExpanded by remember { mutableStateOf(false) }
-
-                            ExposedDropdownMenuBox(
-                                expanded = catExpanded,
-                                onExpandedChange = { catExpanded = !catExpanded },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                OutlinedTextField(
-                                    value = uiState.selectedCategory,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Category") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catExpanded) },
-                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true),
-                                    shape = RoundedCornerShape(12.dp),
-                                    textStyle = MaterialTheme.typography.bodySmall
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = catExpanded,
-                                    onDismissRequest = { catExpanded = false },
-                                    modifier = Modifier.background(MaterialTheme.colorScheme.surface) // Solid
-                                ) {
-                                    uiState.availableCategories.forEach { cat ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    if (cat != "All") {
-                                                        Text(CategoryEngine.emoji(cat, uiState.customCategories))
-                                                        Spacer(Modifier.width(8.dp))
-                                                    }
-                                                    Text(cat)
-                                                }
-                                            },
-                                            onClick = {
-                                                viewModel.setCategoryFilter(cat)
-                                                catExpanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            ExposedDropdownMenuBox(
+                        ExposedDropdownMenuBox(
+                            expanded = accExpanded,
+                            onExpandedChange = { accExpanded = !accExpanded },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = uiState.selectedAccount,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Account") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accExpanded) },
+                                modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true),
+                                shape = RoundedCornerShape(12.dp),
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
+                            ExposedDropdownMenu(
                                 expanded = accExpanded,
-                                onExpandedChange = { accExpanded = !accExpanded },
-                                modifier = Modifier.weight(1f)
+                                onDismissRequest = { accExpanded = false },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surface) // Solid
                             ) {
-                                OutlinedTextField(
-                                    value = uiState.selectedAccount,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Account") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accExpanded) },
-                                    modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true),
-                                    shape = RoundedCornerShape(12.dp),
-                                    textStyle = MaterialTheme.typography.bodySmall
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = accExpanded,
-                                    onDismissRequest = { accExpanded = false },
-                                    modifier = Modifier.background(MaterialTheme.colorScheme.surface) // Solid
-                                ) {
-                                    uiState.availableAccounts.forEach { acc ->
-                                        DropdownMenuItem(
-                                            text = { Text(acc) },
-                                            onClick = {
-                                                viewModel.setAccountFilter(acc)
-                                                accExpanded = false
-                                            }
-                                        )
-                                    }
+                                uiState.availableAccounts.forEach { acc ->
+                                    DropdownMenuItem(
+                                        text = { Text(acc) },
+                                        onClick = {
+                                            viewModel.setAccountFilter(acc)
+                                            accExpanded = false
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -321,22 +257,24 @@ fun AnalyticsScreen() {
                 }
             }
 
-            // ── Scrollable Vertical Bar Chart ─────────────────────────────────
-            if (uiState.trendSummaries.isNotEmpty()) {
+            // ── Category Donut Chart ──────────────────────────────────────────
+            if (uiState.categoryBreakdown.isNotEmpty()) {
                 item {
                     Text(
-                        "${uiState.groupBy.name.lowercase().replaceFirstChar { it.uppercase() }} Breakdown",
+                        text = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
+                            "Spending Distribution"
+                        else
+                            "Income Distribution",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                     )
-
-                    ScrollableBarChart(
-                        summaries = uiState.trendSummaries,
-                        onBarClick = { label -> viewModel.openDrillDown(DrillDownType.Trend(label)) }
+                    CategoryDonutChart(
+                        summaries = uiState.categoryBreakdown,
+                        customCategories = uiState.customCategories,
+                        onCategoryClick = { cat -> viewModel.openDrillDown(DrillDownType.Category(cat)) }
                     )
-
                     Spacer(Modifier.height(16.dp))
                 }
             }
@@ -506,6 +444,169 @@ fun AnalyticsScreen() {
     }
 }
 
+// ── Donut Chart Component ────────────────────────────────────────────────────
+
+@Composable
+private fun CategoryDonutChart(
+    summaries: List<CategorySummary>,
+    customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity>,
+    onCategoryClick: (String) -> Unit
+) {
+    if (summaries.isEmpty()) return
+
+    var expanded by remember { mutableStateOf(false) }
+    val displaySummaries = if (expanded) summaries else summaries.take(7)
+
+    val chartColors = listOf(
+        Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF43F5E),
+        Color(0xFFF97316), Color(0xFFEAB308), Color(0xFF22C55E), Color(0xFF06B6D4),
+        Color(0xFF3B82F6), Color(0xFFA855F7)
+    )
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Donut Chart (Left - 70%)
+                Box(
+                    modifier = Modifier.weight(0.7f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp)
+                            .pointerInput(summaries) {
+                                detectTapGestures { offset ->
+                                    val center = Offset(size.width / 2f, size.height / 2f)
+                                    val angle = (atan2(offset.y - center.y, offset.x - center.x) * 180 / Math.PI).toFloat()
+                                    val normalizedAngle = (angle + 90 + 360) % 360
+
+                                    var currentAngle = 0f
+                                    summaries.forEach { summary ->
+                                        val sweepAngle = (summary.percentage / 100f) * 360f
+                                        if (normalizedAngle >= currentAngle && normalizedAngle < currentAngle + sweepAngle) {
+                                            onCategoryClick(summary.category)
+                                            return@detectTapGestures
+                                        }
+                                        currentAngle += sweepAngle
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            var startAngle = -90f
+                            summaries.forEachIndexed { index, summary ->
+                                val sweepAngle = (summary.percentage / 100f) * 360f
+                                drawArc(
+                                    color = chartColors[index % chartColors.size],
+                                    startAngle = startAngle,
+                                    sweepAngle = sweepAngle,
+                                    useCenter = false,
+                                    style = Stroke(
+                                        width = 32.dp.toPx(),
+                                        cap = StrokeCap.Butt
+                                    )
+                                )
+                                startAngle += sweepAngle
+                            }
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Total",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val totalAmount = summaries.sumOf { it.amount }
+                            Text(
+                                text = "₹${"%,.0f".format(totalAmount)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(16.dp))
+
+                // Legend (Right - 30%)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(0.3f)
+                ) {
+                    displaySummaries.forEachIndexed { index, summary ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { onCategoryClick(summary.category) }
+                                .padding(vertical = 1.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(chartColors[index % chartColors.size], RoundedCornerShape(2.dp))
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = CategoryEngine.emoji(summary.category, customCategories),
+                                    fontSize = 10.sp
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Text(
+                                    text = summary.category,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Text(
+                                text = "${summary.percentage.toInt()}%",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (summaries.size > 7) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = if (expanded) "Show less" else "Show more",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ── Components ───────────────────────────────────────────────────────────────
 
 @Composable
@@ -577,78 +678,6 @@ private fun CategoryRow(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text("${summary.percentage.toInt()}% $labelText", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-fun ScrollableBarChart(
-    summaries: List<TrendSummary>,
-    onBarClick: (String) -> Unit
-) {
-    val maxAmount = maxOf(
-        summaries.maxOfOrNull { it.income } ?: 0.0,
-        summaries.maxOfOrNull { it.expense } ?: 0.0,
-        1.0 // Prevent division by zero
-    ).toFloat()
-
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val incomeColor = Color(0xFF00B894)
-    val expenseColor = MaterialTheme.colorScheme.error
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = surfaceColor)
-    ) {
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(summaries) { summary ->
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.clickable { onBarClick(summary.label) }
-                ) {
-                    Canvas(modifier = Modifier
-                        .height(140.dp)
-                        .width(40.dp)
-                    ) {
-                        val canvasHeight = size.height
-                        val barWidth = 16.dp.toPx()
-                        val spacing = 4.dp.toPx()
-
-                        val incomeHeight = (summary.income.toFloat() / maxAmount) * canvasHeight
-                        val expenseHeight = (summary.expense.toFloat() / maxAmount) * canvasHeight
-
-                        drawRoundRect(
-                            color = incomeColor,
-                            topLeft = Offset(x = 0f, y = canvasHeight - incomeHeight),
-                            size = Size(width = barWidth, height = incomeHeight),
-                            cornerRadius = CornerRadius(x = 8.dp.toPx(), y = 8.dp.toPx())
-                        )
-
-                        drawRoundRect(
-                            color = expenseColor,
-                            topLeft = Offset(x = barWidth + spacing, y = canvasHeight - expenseHeight),
-                            size = Size(width = barWidth, height = expenseHeight),
-                            cornerRadius = CornerRadius(x = 8.dp.toPx(), y = 8.dp.toPx())
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    Text(
-                        text = summary.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
             }
         }
     }

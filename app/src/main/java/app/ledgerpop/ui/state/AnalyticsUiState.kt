@@ -3,21 +3,6 @@ package app.ledgerpop.ui.state
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.SmsTransactionEntity
 
-data class TrendSummary(
-    val label: String,
-    val income: Double,
-    val expense: Double
-)
-
-data class CategorySummary(
-    val category: String,
-    val amount: Double,
-    val percentage: Float
-)
-
-enum class GroupingType { DAILY, WEEKLY, MONTHLY }
-enum class AnalyticsViewType { SPENDS, INCOME }
-
 data class AnalyticsUiState(
     val totalIncome: Double = 0.0,
     val totalExpense: Double = 0.0,

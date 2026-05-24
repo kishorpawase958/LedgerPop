@@ -2,4 +2,18 @@
 <resources>
 
     <style name="Theme.LedgerPop" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.LedgerPop</item>
+    </style>
+
+    <style name="Theme.App.Starting.Light" parent="Theme.App.Starting">
+        <item name="windowSplashScreenBackground">@android:color/white</item>
+    </style>
+
+    <style name="Theme.App.Starting.Dark" parent="Theme.App.Starting">
+        <item name="windowSplashScreenBackground">@android:color/black</item>
+    </style>
 </resources>

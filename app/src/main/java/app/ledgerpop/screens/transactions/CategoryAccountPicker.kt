@@ -33,7 +33,7 @@ fun CategoryAccountPicker(
     onDismiss: () -> Unit,
     customCategories: List<CustomCategoryEntity> = emptyList(),
     accounts: List<AccountEntity> = emptyList(),
-    onUpdateEmoji: ((String, String) -> Unit)? = null
+    onUpdateEmoji: ((String, String) -> Unit)? = null,
 ) {
     var newValue by remember { mutableStateOf("") }
     var editingEmojiFor by remember { mutableStateOf<String?>(null) }
@@ -214,10 +214,12 @@ fun CategoryAccountPicker(
                 )
             },
             confirmButton = {
-                Button(onClick = {
-                    onUpdateEmoji?.invoke(optionName, tempEmoji)
-                    editingEmojiFor = null
-                }) {
+                Button(
+            onClick = {
+                onUpdateEmoji?.invoke(optionName, tempEmoji)
+                editingEmojiFor = null
+            }
+        ) {
                     Text("Save")
                 }
             },

@@ -33,17 +33,17 @@ fun TransactionDetailSheet(
     txn: SmsTransactionEntity,
     onDismiss: () -> Unit,
     onSave: (SmsTransactionEntity) -> Unit,
-    onDelete: (SmsTransactionEntity) -> Unit
+    onDelete: (SmsTransactionEntity) -> Unit,
 ) {
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
     val scope = rememberCoroutineScope()
 
-    val existingTransactions by produceState(initialValue = emptyList<SmsTransactionEntity>()) {
+    val existingTransactions by produceState(initialValue = emptyList()) {
         db.smsTransactionDao().getAllTransactions().collect { value = it }
     }
 
-    val customCategories by produceState(initialValue = emptyList<CustomCategoryEntity>()) {
+    val customCategories by produceState(initialValue = emptyList()) {
         db.customCategoryDao().getAllCategories().collect { value = it }
     }
     
@@ -76,7 +76,7 @@ fun TransactionDetailSheet(
     var account by remember { mutableStateOf(txn.accountHint) }
     var note by remember { mutableStateOf(txn.note) }
     var isBillable by remember { mutableStateOf(txn.isBillable) }
-    var selectedDateMillis by remember { mutableStateOf(txn.transactionTime) }
+    var selectedDateMillis by remember { mutableLongStateOf(txn.transactionTime) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -374,9 +374,9 @@ fun TransactionDetailSheet(
                     datePickerState.selectedDateMillis?.let { picked ->
                         val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
                         val pickedCal = Calendar.getInstance().apply { timeInMillis = picked }
-                        cal.set(Calendar.YEAR, pickedCal.get(Calendar.YEAR))
-                        cal.set(Calendar.MONTH, pickedCal.get(Calendar.MONTH))
-                        cal.set(Calendar.DAY_OF_MONTH, pickedCal.get(Calendar.DAY_OF_MONTH))
+                        cal[Calendar.YEAR] = pickedCal[Calendar.YEAR]
+                        cal[Calendar.MONTH] = pickedCal[Calendar.MONTH]
+                        cal[Calendar.DAY_OF_MONTH] = pickedCal[Calendar.DAY_OF_MONTH]
                         selectedDateMillis = cal.timeInMillis
                     }
                     showDatePicker = false

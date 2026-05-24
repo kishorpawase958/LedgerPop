@@ -7,7 +7,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.ledgerpop.data.category.CategoryEngine
-import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
@@ -167,9 +166,7 @@ class AnalyticsViewModel(
         _endDateMillis.value = end
     }
 
-    fun setGroupingType(type: GroupingType) { _groupBy.value = type }
     fun setViewType(type: AnalyticsViewType) { _viewType.value = type }
-    fun setCategoryFilter(category: String) { _selectedCategory.value = category }
     fun setAccountFilter(account: String) { _selectedAccount.value = account }
 
     fun clearFilters() {

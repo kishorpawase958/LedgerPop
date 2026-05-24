@@ -105,6 +105,7 @@ fun SettingsScreen(
     var showNameDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+    var showFullScanConfirmDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -145,7 +146,7 @@ fun SettingsScreen(
 
         DataImportSection(
             isImporting = uiState.isImporting,
-            onFullScan = { checkAndRequestPermission(context, uiState.hasReadSmsPermission, readLauncher) { viewModel.importSms() } },
+            onFullScan = { showFullScanConfirmDialog = true },
             onRangeScan = { checkAndRequestPermission(context, uiState.hasReadSmsPermission, rangeLauncher) { viewModel.showDateRangePicker() } },
             onCsvImport = { csvImportLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "application/octet-stream")) }
         )
@@ -187,6 +188,13 @@ fun SettingsScreen(
         ClearDataDialog(
             onConfirm = { viewModel.deleteAll() },
             onDismiss = { showClearDialog = false }
+        )
+    }
+
+    if (showFullScanConfirmDialog) {
+        FullScanConfirmDialog(
+            onConfirm = { checkAndRequestPermission(context, uiState.hasReadSmsPermission, readLauncher) { viewModel.importSms() } },
+            onDismiss = { showFullScanConfirmDialog = false }
         )
     }
 
@@ -475,6 +483,31 @@ private fun NameEditDialog(
                 },
                 shape = RoundedCornerShape(12.dp)
             ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun FullScanConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Full Inbox Scan") },
+        text = { Text("This will scan all your SMS messages to find and import historical transactions. This might take a few moments.") },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Import") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

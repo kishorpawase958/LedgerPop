@@ -1,7 +1,5 @@
 package app.ledgerpop.screens.transactions
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -33,17 +30,17 @@ import java.util.*
 @Composable
 fun AddTransactionSheet(
     onDismiss: () -> Unit,
-    onAdd: (SmsTransactionEntity) -> Unit
+    onAdd: (SmsTransactionEntity) -> Unit,
 ) {
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
     val scope = rememberCoroutineScope()
 
-    val existingTransactions by produceState(initialValue = emptyList<SmsTransactionEntity>()) {
+    val existingTransactions by produceState(initialValue = emptyList()) {
         db.smsTransactionDao().getAllTransactions().collect { value = it }
     }
 
-    val customCategories by produceState(initialValue = emptyList<CustomCategoryEntity>()) {
+    val customCategories by produceState(initialValue = emptyList()) {
         db.customCategoryDao().getAllCategories().collect { value = it }
     }
     
@@ -78,7 +75,7 @@ fun AddTransactionSheet(
     var amountError by remember { mutableStateOf(false) }
 
     // Date & Time State
-    var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
@@ -354,9 +351,9 @@ fun AddTransactionSheet(
                     datePickerState.selectedDateMillis?.let { picked ->
                         val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
                         val pickedCal = Calendar.getInstance().apply { timeInMillis = picked }
-                        cal.set(Calendar.YEAR, pickedCal.get(Calendar.YEAR))
-                        cal.set(Calendar.MONTH, pickedCal.get(Calendar.MONTH))
-                        cal.set(Calendar.DAY_OF_MONTH, pickedCal.get(Calendar.DAY_OF_MONTH))
+                        cal[Calendar.YEAR] = pickedCal[Calendar.YEAR]
+                        cal[Calendar.MONTH] = pickedCal[Calendar.MONTH]
+                        cal[Calendar.DAY_OF_MONTH] = pickedCal[Calendar.DAY_OF_MONTH]
                         selectedDateMillis = cal.timeInMillis
                     }
                     showDatePicker = false

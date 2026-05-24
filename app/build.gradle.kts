@@ -1,21 +1,20 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.kotlinCompose)
     alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "app.ledgerpop"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "app.ledgerpop"
         minSdk = 31
         //noinspection OldTargetApi
-        targetSdk = 36
-        versionCode = 2           // ← increase by 1 from last time (was 1)
-        versionName = "1.1.0"     // ← change from "1.0.0" to "1.0.5"
+        targetSdk = 37
+        versionCode = 3           // ← increase by 1 from last time (was 2)
+        versionName = "1.2.0"     // ← change from "1.1.0" to "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,9 +37,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    kotlinOptions {
-        jvmTarget = "21"
-    }
     buildFeatures {
         compose = true
     }
@@ -54,6 +50,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)

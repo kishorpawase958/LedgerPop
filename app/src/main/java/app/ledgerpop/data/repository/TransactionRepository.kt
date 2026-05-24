@@ -14,7 +14,6 @@ class TransactionRepository(
     suspend fun getById(id: Int): SmsTransactionEntity? = dao.getById(id)
 
     suspend fun update(txn: SmsTransactionEntity) = dao.update(txn)
-    suspend fun clearAll() = dao.clearAll()
     // TransactionRepository.kt
     suspend fun delete(txn: SmsTransactionEntity) = dao.delete(txn)
     suspend fun insert(txn: SmsTransactionEntity) = dao.insert(txn)

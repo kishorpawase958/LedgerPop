@@ -1,5 +1,6 @@
 package app.ledgerpop.screens.transactions
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,6 +16,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +29,7 @@ import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -45,12 +50,12 @@ fun TransactionsScreen() {
     var showAddSheet by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
 
-    val categories = remember(uiState.allTransactions) {
-        listOf("All") + uiState.allTransactions.map { it.category }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
-    }
+    val onTransactionClick = remember { { txn: SmsTransactionEntity -> selectedTxn = txn } }
+    val onQuickCategoryClick = remember { { txn: SmsTransactionEntity -> quickCategoryTxn = txn } }
+    val filterOptions = remember { listOf("All", "Debit", "Credit") }
+
+    val categories = uiState.availableCategories
+    val accounts = uiState.availableAccounts
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -136,13 +141,13 @@ fun TransactionsScreen() {
                     }
                 }
 
-                // Type filter chips
+                // Type & Category filter chips
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
-                    items(listOf("All", "Debit", "Credit")) { filter ->
+                    items(filterOptions, key = { it }) { filter ->
                         FilterChip(
                             selected = uiState.selectedFilter == filter,
                             onClick = { viewModel.onFilterChange(filter) },
@@ -159,7 +164,7 @@ fun TransactionsScreen() {
 
                     // Category chips
                     if (categories.size > 1) {
-                        items(categories.drop(1)) { cat ->
+                        items(categories.drop(1), key = { it }) { cat ->
                             FilterChip(
                                 selected = uiState.selectedCategory == cat,
                                 onClick = {
@@ -171,6 +176,34 @@ fun TransactionsScreen() {
                                 leadingIcon = if (uiState.selectedCategory == cat) ({
                                     Icon(
                                         Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }) else null
+                            )
+                        }
+                    }
+                }
+
+                // Account filter chips
+                if (accounts.size > 1) {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        items(accounts, key = { it }) { acc ->
+                            FilterChip(
+                                selected = uiState.selectedAccount == acc,
+                                onClick = {
+                                    viewModel.onAccountChange(
+                                        if (uiState.selectedAccount == acc) "All" else acc
+                                    )
+                                },
+                                label = { Text(acc) },
+                                leadingIcon = if (uiState.selectedAccount == acc) ({
+                                    Icon(
+                                        Icons.Rounded.AccountBalanceWallet,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
@@ -234,6 +267,23 @@ fun TransactionsScreen() {
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
+                    if (uiState.trendSummaries.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Monthly Trend",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)
+                            )
+                            ScrollableBarChart(
+                                summaries = uiState.trendSummaries,
+                                selectedMonth = uiState.selectedMonth,
+                                onBarClick = { viewModel.onMonthToggle(it) }
+                            )
+                            Spacer(Modifier.height(16.dp))
+                        }
+                    }
+
                     items(
                         items = filtered,
                         key = { it.id }
@@ -241,8 +291,8 @@ fun TransactionsScreen() {
                         TransactionRow(
                             txn = txn,
                             customCategories = uiState.customCategories,
-                            onClick = { selectedTxn = txn },
-                            onCategoryClick = { quickCategoryTxn = txn }
+                            onClick = onTransactionClick,
+                            onCategoryClick = onQuickCategoryClick
                         )
                     }
                 }
@@ -329,6 +379,89 @@ fun TransactionsScreen() {
     }
 }
 
+@Composable
+fun ScrollableBarChart(
+    summaries: List<TrendSummary>,
+    selectedMonth: String? = null,
+    onBarClick: (String) -> Unit
+) {
+    val maxAmount = remember(summaries) {
+        maxOf(
+            summaries.maxOfOrNull { it.income } ?: 0.0,
+            summaries.maxOfOrNull { it.expense } ?: 0.0,
+            1.0 // Prevent division by zero
+        ).toFloat()
+    }
+
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val incomeColor = Color(0xFF00B894)
+    val expenseColor = MaterialTheme.colorScheme.error
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = surfaceColor)
+    ) {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(summaries, key = { it.label }) { summary ->
+                val isSelected = summary.label == selectedMonth
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
+                        .clickable { onBarClick(summary.label) }
+                        .padding(horizontal = 8.dp, vertical = 12.dp)
+                ) {
+                    Canvas(modifier = Modifier
+                        .height(120.dp)
+                        .width(40.dp)
+                        .alpha(if (selectedMonth == null || isSelected) 1f else 0.4f)
+                    ) {
+                        val canvasHeight = size.height
+                        val barWidth = 16.dp.toPx()
+                        val spacing = 4.dp.toPx()
+
+                        val incomeHeight = (summary.income.toFloat() / maxAmount) * canvasHeight
+                        val expenseHeight = (summary.expense.toFloat() / maxAmount) * canvasHeight
+
+                        drawRoundRect(
+                            color = incomeColor,
+                            topLeft = Offset(x = 0f, y = canvasHeight - incomeHeight),
+                            size = Size(width = barWidth, height = incomeHeight),
+                            cornerRadius = CornerRadius(x = 8.dp.toPx(), y = 8.dp.toPx())
+                        )
+
+                        drawRoundRect(
+                            color = expenseColor,
+                            topLeft = Offset(x = barWidth + spacing, y = canvasHeight - expenseHeight),
+                            size = Size(width = barWidth, height = expenseHeight),
+                            cornerRadius = CornerRadius(x = 8.dp.toPx(), y = 8.dp.toPx())
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        text = summary.label,
+                        style = if (isSelected) MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold) 
+                               else MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary 
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ── Transaction Row ────────────────────────────────────────────────────────────
 
 private val transactionDateFormatter = SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
@@ -337,8 +470,8 @@ private val transactionDateFormatter = SimpleDateFormat("d MMM, h:mm a", Locale.
 private fun TransactionRow(
     txn: SmsTransactionEntity,
     customCategories: List<CustomCategoryEntity> = emptyList(),
-    onClick: () -> Unit,
-    onCategoryClick: () -> Unit
+    onClick: (SmsTransactionEntity) -> Unit,
+    onCategoryClick: (SmsTransactionEntity) -> Unit
 ) {
     val isDebit = txn.type == "DEBIT"
     val isBillable = txn.isBillable
@@ -352,8 +485,8 @@ private fun TransactionRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-            .clickable { onClick() }
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable { onClick(txn) }
             .alpha(if (isBillable) 1f else 0.45f)
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -367,7 +500,7 @@ private fun TransactionRow(
                     if (isBillable) amountColor.copy(alpha = 0.1f)
                     else MaterialTheme.colorScheme.surfaceVariant
                 )
-                .clickable { onCategoryClick() },
+                .clickable { onCategoryClick(txn) },
             contentAlignment = Alignment.Center
         ) {
             Text(

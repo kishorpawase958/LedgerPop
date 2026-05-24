@@ -15,12 +15,18 @@ import java.util.Calendar
 
 data class HomeInsight(val icon: String, val message: String)
 
+data class CategoryAggregate(val category: String, val amount: Double)
+
 data class HomeUiState(
     val recentTransactions: List<SmsTransactionEntity> = emptyList(),
+    val topCategories: List<CategoryAggregate> = emptyList(),
+    val topTransactions: List<SmsTransactionEntity> = emptyList(),
     val totalIncome: Double = 0.0,
     val totalExpense: Double = 0.0,
     val totalBalance: Double = 0.0,
+    val thisMonthIncome: Double = 0.0,
     val thisMonthExpense: Double = 0.0,
+    val thisMonthBalance: Double = 0.0,
     val lastMonthExpense: Double = 0.0,
     val insights: List<HomeInsight> = emptyList(),
     val isLoading: Boolean = true
@@ -59,6 +65,10 @@ class HomeViewModel(
                     return c.get(Calendar.YEAR)
                 }
 
+                val thisMonthIncome = billable
+                    .filter { it.type == "CREDIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear }
+                    .sumOf { it.amount }
+
                 val thisMonthExpense = billable
                     .filter { it.type == "DEBIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear }
                     .sumOf { it.amount }
@@ -67,15 +77,35 @@ class HomeViewModel(
                     .filter { it.type == "DEBIT" && txnMonth(it) == lastMonth && txnYear(it) == lastYear }
                     .sumOf { it.amount }
 
+                val thisMonthDebits = billable.filter {
+                    it.type == "DEBIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear
+                }
+
+                val topCategories = thisMonthDebits
+                    .groupBy { it.category }
+                    .map { (cat, txns) ->
+                        CategoryAggregate(cat.ifBlank { "Other" }, txns.sumOf { it.amount })
+                    }
+                    .sortedByDescending { it.amount }
+                    .take(3)
+
+                val topTransactions = thisMonthDebits
+                    .sortedByDescending { it.amount }
+                    .take(3)
+
                 val insights = buildInsights(income, expense, thisMonthExpense, lastMonthExpense, billable)
 
                 _uiState.update {
                     it.copy(
                         recentTransactions = all.take(10),
+                        topCategories = topCategories,
+                        topTransactions = topTransactions,
                         totalIncome = income,
                         totalExpense = expense,
                         totalBalance = income - expense,
+                        thisMonthIncome = thisMonthIncome,
                         thisMonthExpense = thisMonthExpense,
+                        thisMonthBalance = thisMonthIncome - thisMonthExpense,
                         lastMonthExpense = lastMonthExpense,
                         insights = insights,
                         isLoading = false
@@ -94,13 +124,6 @@ class HomeViewModel(
 
     fun addTransaction(txn: SmsTransactionEntity) {
         viewModelScope.launch { repository.insert(txn) }
-    }
-
-    fun toggleBillable(id: Int) {
-        viewModelScope.launch {
-            val txn = repository.getById(id) ?: return@launch
-            repository.update(txn.copy(isBillable = !txn.isBillable))
-        }
     }
 
     private fun buildInsights(
