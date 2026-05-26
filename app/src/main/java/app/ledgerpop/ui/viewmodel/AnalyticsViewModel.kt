@@ -80,11 +80,11 @@ class AnalyticsViewModel(
         if (f.category != "All") filteredTxns = filteredTxns.filter { CategoryEngine.normalize(it.category) == f.category }
         if (f.account != "All") filteredTxns = filteredTxns.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
 
-        val income = filteredTxns.filter { it.type == "CREDIT" }.sumOf { it.amount }
+        val income = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount }
         val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
         val debits = filteredTxns.filter { it.type == "DEBIT" }
-        val credits = filteredTxns.filter { it.type == "CREDIT" }
-        val avg = if (debits.isNotEmpty()) debits.sumOf { it.amount } / debits.size else 0.0
+        val credits = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }
+        val avg = if (debits.isNotEmpty()) expense / debits.size else 0.0
 
         val trendFormat = formats[f.groupBy]!!
         val trendSummaries = filteredTxns
@@ -98,7 +98,7 @@ class AnalyticsViewModel(
             .map { (label, txns) ->
                 TrendSummary(
                     label = label,
-                    income = txns.filter { it.type == "CREDIT" }.sumOf { it.amount },
+                    income = txns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount },
                     expense = txns.filter { it.type == "DEBIT" }.sumOf { it.amount }
                 )
             }
@@ -147,7 +147,8 @@ class AnalyticsViewModel(
             selectedAccount = f.account,
             availableCategories = cats,
             availableAccounts = accs,
-            filteredTransactions = filteredTxns.sortedByDescending { it.transactionTime }
+            filteredTransactions = filteredTxns.sortedByDescending { it.transactionTime },
+            allTransactions = allTxns
         )
     }.stateIn(
      scope = viewModelScope,
@@ -168,6 +169,7 @@ class AnalyticsViewModel(
 
     fun setViewType(type: AnalyticsViewType) { _viewType.value = type }
     fun setAccountFilter(account: String) { _selectedAccount.value = account }
+    fun setCategoryFilter(category: String) { _selectedCategory.value = category }
 
     fun clearFilters() {
         _startDateMillis.value = null

@@ -50,4 +50,22 @@ interface SmsTransactionDao {
 
     @Query("UPDATE sms_transactions SET accountHint = :targetName WHERE accountHint = :sourceName")
     suspend fun updateAccountName(sourceName: String, targetName: String)
+
+    @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId")
+    fun getLinkedCredits(debitId: Int): Flow<List<SmsTransactionEntity>>
+
+    @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId")
+    suspend fun getLinkedCreditsSync(debitId: Int): List<SmsTransactionEntity>
+
+    @Query("SELECT * FROM sms_transactions WHERE type = 'CREDIT' AND linkedTransactionId IS NULL AND transactionTime >= :minTime")
+    fun getAvailableCredits(minTime: Long): Flow<List<SmsTransactionEntity>>
+
+    @Query("UPDATE sms_transactions SET linkedTransactionId = :debitId WHERE id = :creditId")
+    suspend fun linkCreditToDebit(creditId: Int, debitId: Int?)
+
+    @Query("UPDATE sms_transactions SET linkedTransactionId = NULL WHERE linkedTransactionId = :debitId")
+    suspend fun unlinkAllCreditsFromDebit(debitId: Int)
+
+    @Query("SELECT * FROM sms_transactions WHERE type = 'DEBIT' AND transactionTime <= :maxTime ORDER BY transactionTime DESC")
+    fun getAvailableDebits(maxTime: Long): Flow<List<SmsTransactionEntity>>
 }

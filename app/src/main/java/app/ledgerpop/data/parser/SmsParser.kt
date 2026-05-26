@@ -19,7 +19,7 @@ object SmsParser {
         // Prefer INR Equivalent for international transactions
         Regex("""(?:Inr Equiv Approx|Inr Equiv|Equiv\.? INR)\s*(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
         Regex("""(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
-        Regex("""(?:debited by|credited by|payment of|spent on|spend|paid from|for|of|withdrawn at)\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
+        Regex("""(?:debited by|credited by|payment of|spent on|spent|spend|paid from|for|of|withdrawn at)\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
     )
 
     private val debitKeywords = listOf("debited", "spent", "spend", "paid", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of")
@@ -44,8 +44,17 @@ object SmsParser {
         val cleanBankName = bankName.split("\\s+".toRegex()).asSequence().take(3).joinToString(" ")
         val accountName = if (accountLast4.isNotBlank()) "$cleanBankName ($accountLast4)" else cleanBankName
 
-        // Extract Merchant Name (Max 3 words, fallback to "Unknown")
-        val merchant = extractMerchant(text, type)
+        // Extract Merchant Name (Max 3 words, fallback to "Unknown" or "Account Credit")
+        var merchant = extractMerchant(text, type)
+
+        // Fallback: If merchant is not found (Unknown/Account Credit), try to find UPI Ref No.
+        if (merchant == "Unknown" || merchant == "Account Credit") {
+            val upiRef = extractUpiRef(text)
+            if (upiRef != null) {
+                merchant = "UPI $upiRef"
+            }
+        }
+
         val cleanMerchant = if (merchant == "Unknown" || (merchant == "Account Credit")) {
             merchant
         } else {
@@ -75,6 +84,19 @@ object SmsParser {
         return null
     }
 
+    private fun extractUpiRef(text: String): String? {
+        val patterns = listOf(
+            Regex("""(?i)(?:UPI\s*ref\s*no\.?|Ref\s*no\.?|UPI\s*Ref)\s*([0-9]{8,14})"""),
+            Regex("""(?i)UPI/([0-9]{8,14})""")
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            val ref = match?.groupValues?.getOrNull(1)
+            if (!ref.isNullOrBlank()) return ref
+        }
+        return null
+    }
+
     private fun detectType(text: String): String? {
         val lower = text.lowercase(Locale.getDefault())
         val hasDebit = debitKeywords.any { lower.contains(it) }
@@ -94,6 +116,8 @@ object SmsParser {
 
     private fun extractMerchant(text: String, type: String): String {
         val patterns = listOf(
+            // New pattern for "IST [Merchant]" format (common in some multi-line SMS)
+            Regex("""(?i)IST\s+([A-Za-z0-9\s.&'-]{2,40}?)(?=\s+(?:on|via|with|using|ref|from|upi|avl|bal|for|card|a/c|is|under|$|\.))"""),
             // Negative lookahead (?!\s+your\b) ignores "at your"
             // Lookahead stops matching before common transaction suffixes
             Regex("""(?i)(?:at(?!\s+your\b)|to|info\s*vpa|paid\s*to|sent\s*to|spent\s*at|towards)\s+([A-Za-z0-9\s.&'-]{2,40}?)(?=\s+(?:on|via|with|using|ref|from|upi|avl|bal|for|card|a/c|is|under|$|\.))"""),

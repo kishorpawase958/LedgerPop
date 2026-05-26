@@ -568,7 +568,16 @@ private fun DateRangeImportDialog(
     ) {
         DateRangePicker(
             state = dateRangePickerState,
-            modifier = Modifier.height(500.dp)
+            modifier = Modifier.height(500.dp),
+            colors = DatePickerDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+                selectedYearContainerColor = MaterialTheme.colorScheme.primary,
+                todayContentColor = MaterialTheme.colorScheme.primary,
+                todayDateBorderColor = MaterialTheme.colorScheme.primary,
+                dayInSelectionRangeContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                dayInSelectionRangeContentColor = MaterialTheme.colorScheme.primary
+            )
         )
     }
 }

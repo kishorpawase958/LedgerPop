@@ -85,11 +85,10 @@ class TransactionsViewModel(
             }
             .map { (label, txns) -> label to txns }
             .sortedBy { (_, txns) -> txns.minOf { it.transactionTime } }
-            .takeLast(12)
             .map { (label, txns) ->
                 TrendSummary(
                     label = label,
-                    income = txns.filter { it.type == "CREDIT" }.sumOf { it.amount },
+                    income = txns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount },
                     expense = txns.filter { it.type == "DEBIT" }.sumOf { it.amount }
                 )
             }

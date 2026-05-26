@@ -1,12 +1,16 @@
 package app.ledgerpop.screens.transactions
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -20,7 +24,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,6 +37,8 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
+import app.ledgerpop.ui.theme.Purple700
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -39,6 +47,7 @@ import java.util.*
 fun TransactionsScreen() {
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
     val viewModel: TransactionsViewModel = viewModel(
         factory = TransactionsViewModel.factory(db)
     )
@@ -77,30 +86,7 @@ fun TransactionsScreen() {
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
 
-                // Search
-                OutlinedTextField(
-                    value = uiState.query,
-                    onValueChange = viewModel::onQueryChange,
-                    placeholder = { Text("Search merchant, sender…") },
-                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (uiState.query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.onQueryChange("") }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "Clear")
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    )
-                )
-
-                // ── Date Range Filter Button ─────────────────────────────────
+                // Search & Date Row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -108,36 +94,42 @@ fun TransactionsScreen() {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = { showDatePicker = true },
+                    OutlinedTextField(
+                        value = uiState.query,
+                        onValueChange = viewModel::onQueryChange,
+                        placeholder = { Text("Search transactions…") },
+                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (uiState.query.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.onQueryChange("") }) {
+                                    Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                                }
+                            }
+                        },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Rounded.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        val dateText = if (uiState.startDateMillis != null && uiState.endDateMillis != null) {
-                            val sdf = SimpleDateFormat("dd MMM yy", Locale.getDefault())
-                            "${sdf.format(Date(uiState.startDateMillis!!))} - ${sdf.format(Date(uiState.endDateMillis!!))}"
-                        } else {
-                            "Select Date Range"
-                        }
-                        Text(dateText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
+                        shape = RoundedCornerShape(14.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+                    )
 
-                    if (uiState.startDateMillis != null) {
-                        IconButton(
-                            onClick = { viewModel.clearDates() },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Close,
-                                contentDescription = "Clear Dates",
-                                tint = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
+                    val hasDates = uiState.startDateMillis != null
+                    OutlinedIconButton(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.size(54.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = IconButtonDefaults.outlinedIconButtonColors(
+                            containerColor = if (hasDates) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else Color.Transparent,
+                            contentColor = if (hasDates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (hasDates) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Icon(Icons.Rounded.DateRange, contentDescription = "Date Range")
                     }
                 }
 
@@ -291,6 +283,7 @@ fun TransactionsScreen() {
                         TransactionRow(
                             txn = txn,
                             customCategories = uiState.customCategories,
+                            allTransactions = uiState.allTransactions,
                             onClick = onTransactionClick,
                             onCategoryClick = onQuickCategoryClick
                         )
@@ -300,16 +293,21 @@ fun TransactionsScreen() {
         }
 
         // ── FAB ─────────────────────────────────────────────────────────────
-        ExtendedFloatingActionButton(
+        FloatingActionButton(
             onClick = { showAddSheet = true },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 135.dp),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-            text = { Text("Add") }
-        )
+                .padding(end = 24.dp, bottom = 135.dp),
+            containerColor = Purple700,
+            contentColor = Color.White,
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Add,
+                contentDescription = "Add",
+                modifier = Modifier.size(28.dp)
+            )
+        }
     }
 
     // ── Quick Category Update Dialog ─────────────────────────────────────────
@@ -335,13 +333,27 @@ fun TransactionsScreen() {
             onDismissRequest = { showDatePicker = false },
             colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.setDateRange(
-                        start = dateRangePickerState.selectedStartDateMillis,
-                        end = dateRangePickerState.selectedEndDateMillis
-                    )
-                    showDatePicker = false
-                }) { Text("Apply") }
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (uiState.startDateMillis != null) {
+                        TextButton(
+                            onClick = {
+                                viewModel.clearDates()
+                                showDatePicker = false
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Clear") }
+                    }
+                    TextButton(onClick = {
+                        viewModel.setDateRange(
+                            start = dateRangePickerState.selectedStartDateMillis,
+                            end = dateRangePickerState.selectedEndDateMillis
+                        )
+                        showDatePicker = false
+                    }) { Text("Apply") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
@@ -349,7 +361,16 @@ fun TransactionsScreen() {
         ) {
             DateRangePicker(
                 state = dateRangePickerState,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                colors = DatePickerDefaults.colors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedYearContainerColor = MaterialTheme.colorScheme.primary,
+                    todayContentColor = MaterialTheme.colorScheme.primary,
+                    todayDateBorderColor = MaterialTheme.colorScheme.primary,
+                    dayInSelectionRangeContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    dayInSelectionRangeContentColor = MaterialTheme.colorScheme.primary
+                )
             )
         }
     }
@@ -366,6 +387,12 @@ fun TransactionsScreen() {
             onDelete = { toDelete ->
                 viewModel.deleteTransaction(toDelete)
                 selectedTxn = null
+            },
+            onNavigateToTransaction = { id ->
+                scope.launch {
+                    val target = db.smsTransactionDao().getById(id)
+                    selectedTxn = target
+                }
             }
         )
     }
@@ -385,17 +412,14 @@ fun ScrollableBarChart(
     selectedMonth: String? = null,
     onBarClick: (String) -> Unit
 ) {
-    val maxAmount = remember(summaries) {
-        maxOf(
-            summaries.maxOfOrNull { it.income } ?: 0.0,
-            summaries.maxOfOrNull { it.expense } ?: 0.0,
-            1.0 // Prevent division by zero
-        ).toFloat()
-    }
-
+    val density = LocalDensity.current
     val surfaceColor = MaterialTheme.colorScheme.surface
-    val incomeColor = Color(0xFF00B894)
-    val expenseColor = MaterialTheme.colorScheme.error
+    val creditColor = Color(0xFF00B894)
+    val debitColor = Color(0xFF9C27B0) // Purple
+
+    val itemWidth = 52.dp
+    val spacing = 16.dp
+    val chartHeight = 120.dp
 
     Card(
         modifier = Modifier
@@ -404,58 +428,153 @@ fun ScrollableBarChart(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = surfaceColor)
     ) {
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        val scrollState = rememberScrollState()
+
+        // Auto-scroll to latest (rightmost) data on first load
+        var hasAutoScrolled by remember(summaries.isEmpty()) { mutableStateOf(false) }
+        LaunchedEffect(summaries, scrollState.maxValue) {
+            if (summaries.isNotEmpty() && scrollState.maxValue > 0 && !hasAutoScrolled) {
+                scrollState.scrollTo(scrollState.maxValue)
+                hasAutoScrolled = true
+            }
+        }
+        
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 24.dp)
         ) {
-            items(summaries, key = { it.label }) { summary ->
-                val isSelected = summary.label == selectedMonth
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+            val viewportWidth = with(density) { maxWidth.toPx() }
+            val itemWidthPx = with(density) { itemWidth.toPx() }
+            val spacingPx = with(density) { spacing.toPx() }
+            val totalItemStepPx = itemWidthPx + spacingPx
+
+            // Dynamically calculate visible range and its max value for scaling
+            val visibleMax by remember(summaries) {
+                derivedStateOf {
+                    val scrollX = scrollState.value.toFloat()
+                    val startIndex = (scrollX / totalItemStepPx).toInt().coerceAtLeast(0)
+                    val endIndex = ((scrollX + viewportWidth) / totalItemStepPx).toInt().coerceAtMost(summaries.size - 1)
+
+                    if (summaries.isEmpty()) 1.0 else {
+                        var maxV = 0.0
+                        for (i in startIndex..endIndex) {
+                            maxV = maxOf(maxV, summaries[i].income, summaries[i].expense)
+                        }
+                        if (maxV <= 0) 1.0 else maxV
+                    }
+                }
+            }
+
+            // Scale so visibleMax is at 85% of chart height
+            val chartMaxAmount by animateFloatAsState(
+                targetValue = (visibleMax / 0.85f).toFloat(),
+                label = "ChartScale"
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(scrollState)
+                    .padding(horizontal = 16.dp)
+            ) {
+                val totalWidth = if (summaries.isEmpty()) 0.dp else (itemWidth + spacing) * summaries.size - spacing
+                
+                Canvas(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
-                        .clickable { onBarClick(summary.label) }
-                        .padding(horizontal = 8.dp, vertical = 12.dp)
+                        .width(totalWidth)
+                        .height(chartHeight)
                 ) {
-                    Canvas(modifier = Modifier
-                        .height(120.dp)
-                        .width(40.dp)
-                        .alpha(if (selectedMonth == null || isSelected) 1f else 0.4f)
-                    ) {
-                        val canvasHeight = size.height
-                        val barWidth = 16.dp.toPx()
-                        val spacing = 4.dp.toPx()
+                    val canvasHeight = size.height
+                    val points = mutableListOf<Offset>()
 
-                        val incomeHeight = (summary.income.toFloat() / maxAmount) * canvasHeight
-                        val expenseHeight = (summary.expense.toFloat() / maxAmount) * canvasHeight
-
+                    summaries.forEachIndexed { index, summary ->
+                        val isSelected = summary.label == selectedMonth
+                        val alpha = if (selectedMonth == null || isSelected) 1f else 0.4f
+                        val xCenter = index * (itemWidthPx + spacingPx) + itemWidthPx / 2
+                        
+                        // Debit Bar (Purple)
+                        val expenseHeight = (summary.expense.toFloat() / chartMaxAmount) * canvasHeight
+                        val barWidth = 18.dp.toPx()
                         drawRoundRect(
-                            color = incomeColor,
-                            topLeft = Offset(x = 0f, y = canvasHeight - incomeHeight),
-                            size = Size(width = barWidth, height = incomeHeight),
-                            cornerRadius = CornerRadius(x = 8.dp.toPx(), y = 8.dp.toPx())
-                        )
-
-                        drawRoundRect(
-                            color = expenseColor,
-                            topLeft = Offset(x = barWidth + spacing, y = canvasHeight - expenseHeight),
+                            color = debitColor,
+                            topLeft = Offset(x = xCenter - barWidth / 2, y = canvasHeight - expenseHeight),
                             size = Size(width = barWidth, height = expenseHeight),
-                            cornerRadius = CornerRadius(x = 8.dp.toPx(), y = 8.dp.toPx())
+                            cornerRadius = CornerRadius(x = 4.dp.toPx(), y = 4.dp.toPx()),
+                            alpha = alpha
                         )
+
+                        // Credit Point (for Line Chart)
+                        val incomeHeight = (summary.income.toFloat() / chartMaxAmount) * canvasHeight
+                        points.add(Offset(x = xCenter, y = canvasHeight - incomeHeight))
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    // Draw Credit Line
+                    if (points.size > 1) {
+                        for (i in 0 until points.size - 1) {
+                            val isSelected = selectedMonth == null ||
+                                           summaries[i].label == selectedMonth ||
+                                           summaries[i+1].label == selectedMonth
+                            val lineAlpha = if (isSelected) 1f else 0.3f
 
-                    Text(
-                        text = summary.label,
-                        style = if (isSelected) MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold) 
-                               else MaterialTheme.typography.labelSmall,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary 
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
+                            drawLine(
+                                color = creditColor,
+                                start = points[i],
+                                end = points[i+1],
+                                strokeWidth = 2.5.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                alpha = lineAlpha
+                            )
+                        }
+                    }
+
+                    // Draw Credit Points
+                    points.forEachIndexed { index, point ->
+                        val monthSelected = selectedMonth == null || summaries[index].label == selectedMonth
+                        val alpha = if (monthSelected) 1f else 0.4f
+
+                        drawCircle(
+                            color = creditColor,
+                            radius = 5.dp.toPx(),
+                            center = point,
+                            alpha = alpha
+                        )
+                        drawCircle(
+                            color = surfaceColor,
+                            radius = 2.5.dp.toPx(),
+                            center = point,
+                            alpha = alpha
+                        )
+                    }
+                }
+
+                // Interactive layer and Labels
+                Row {
+                    summaries.forEach { summary ->
+                        val isSelected = summary.label == selectedMonth
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(itemWidth)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent)
+                                .clickable { onBarClick(summary.label) }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Spacer(Modifier.height(chartHeight + 8.dp))
+                            Text(
+                                text = summary.label,
+                                style = if (isSelected) MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                                       else MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                        if (summary != summaries.last()) {
+                            Spacer(Modifier.width(spacing))
+                        }
+                    }
                 }
             }
         }
@@ -470,14 +589,25 @@ private val transactionDateFormatter = SimpleDateFormat("d MMM, h:mm a", Locale.
 private fun TransactionRow(
     txn: SmsTransactionEntity,
     customCategories: List<CustomCategoryEntity> = emptyList(),
+    allTransactions: List<SmsTransactionEntity> = emptyList(),
     onClick: (SmsTransactionEntity) -> Unit,
     onCategoryClick: (SmsTransactionEntity) -> Unit
 ) {
     val isDebit = txn.type == "DEBIT"
     val isBillable = txn.isBillable
-    val amountColor = if (isDebit) MaterialTheme.colorScheme.error else Color(0xFF00B894)
+    val amountColor = if (isDebit) MaterialTheme.colorScheme.onSurface else Color(0xFF00B894)
     val time = remember(txn.transactionTime) {
         transactionDateFormatter.format(Date(txn.transactionTime))
+    }
+
+    val linkedAmount = remember(txn, allTransactions) {
+        if (isDebit) {
+            allTransactions.filter { it.linkedTransactionId == txn.id }.sumOf { it.amount }
+        } else 0.0
+    }
+    val hasLinks = remember(txn, allTransactions) {
+        if (isDebit) linkedAmount > 0
+        else txn.linkedTransactionId != null
     }
 
     Row(
@@ -568,13 +698,39 @@ private fun TransactionRow(
         }
 
         // Amount
-        Text(
-            text = "${if (isDebit) "−" else "+"} ₹${"%,.0f".format(txn.amount)}",
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = if (isBillable) amountColor
-            else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "${if (txn.amount < 0) "−" else ""}₹${"%,.0f".format(kotlin.math.abs(txn.amount))}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isBillable) amountColor
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (txn.originalAmount != null) {
+                Text(
+                    text = "₹${"%,.0f".format(txn.originalAmount)}",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    ),
+                    color = MaterialTheme.colorScheme.outline
+                )
+            } else if (hasLinks && !isDebit) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Link,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text(
+                        text = "Linked",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
     }
 }
 

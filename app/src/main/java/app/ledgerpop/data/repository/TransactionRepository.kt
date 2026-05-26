@@ -14,11 +14,27 @@ class TransactionRepository(
     suspend fun getById(id: Int): SmsTransactionEntity? = dao.getById(id)
 
     suspend fun update(txn: SmsTransactionEntity) = dao.update(txn)
-    // TransactionRepository.kt
-    suspend fun delete(txn: SmsTransactionEntity) = dao.delete(txn)
+
+    suspend fun delete(txn: SmsTransactionEntity) {
+        if (txn.type == "DEBIT") {
+            dao.unlinkAllCreditsFromDebit(txn.id)
+        }
+        dao.delete(txn)
+    }
+
     suspend fun insert(txn: SmsTransactionEntity) = dao.insert(txn)
 
     fun getAllCustomCategories() = categoryDao.getAllCategories()
 
+    fun getLinkedCredits(debitId: Int): Flow<List<SmsTransactionEntity>> = dao.getLinkedCredits(debitId)
 
+    suspend fun getLinkedCreditsSync(debitId: Int): List<SmsTransactionEntity> = dao.getLinkedCreditsSync(debitId)
+
+    fun getAvailableCredits(minTime: Long): Flow<List<SmsTransactionEntity>> = dao.getAvailableCredits(minTime)
+
+    suspend fun linkCreditToDebit(creditId: Int, debitId: Int?) = dao.linkCreditToDebit(creditId, debitId)
+
+    suspend fun unlinkAllCreditsFromDebit(debitId: Int) = dao.unlinkAllCreditsFromDebit(debitId)
+
+    fun getAvailableDebits(maxTime: Long) = dao.getAvailableDebits(maxTime)
 }

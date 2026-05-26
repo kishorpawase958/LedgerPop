@@ -1,5 +1,6 @@
 package app.ledgerpop.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -29,14 +30,19 @@ data class HomeUiState(
     val thisMonthBalance: Double = 0.0,
     val lastMonthExpense: Double = 0.0,
     val insights: List<HomeInsight> = emptyList(),
+    val monthlyBudget: Double = 0.0,
     val isLoading: Boolean = true
 )
 
 class HomeViewModel(
-    private val repository: TransactionRepository
+    private val repository: TransactionRepository,
+    context: Context
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val sharedPrefs = context.applicationContext.getSharedPreferences("ledgerpop_prefs", Context.MODE_PRIVATE)
+    private val _uiState = MutableStateFlow(HomeUiState(
+        monthlyBudget = sharedPrefs.getFloat("monthly_budget", 0f).toDouble()
+    ))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
@@ -126,6 +132,11 @@ class HomeViewModel(
         viewModelScope.launch { repository.insert(txn) }
     }
 
+    fun updateBudget(budget: Double) {
+        sharedPrefs.edit().putFloat("monthly_budget", budget.toFloat()).apply()
+        _uiState.update { it.copy(monthlyBudget = budget) }
+    }
+
     private fun buildInsights(
         income: Double,
         expense: Double,
@@ -151,14 +162,15 @@ class HomeViewModel(
 
     companion object {
         @Suppress("UNCHECKED_CAST")
-        fun factory(database: LedgerPopDatabase): ViewModelProvider.Factory =
+        fun factory(database: LedgerPopDatabase, context: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                     HomeViewModel(
                         TransactionRepository(
                             database.smsTransactionDao(),
                             database.customCategoryDao()
-                        )
+                        ),
+                        context
                     ) as T
             }
     }

@@ -27,5 +27,6 @@ data class AnalyticsUiState(
     val availableAccounts: List<String> = listOf("All"),
 
     // For CSV Export
-    val filteredTransactions: List<SmsTransactionEntity> = emptyList()
+    val filteredTransactions: List<SmsTransactionEntity> = emptyList(),
+    val allTransactions: List<SmsTransactionEntity> = emptyList()
 )
