@@ -34,7 +34,8 @@ private data class AnalyticsFilters(
     val groupBy: GroupingType,
     val viewType: AnalyticsViewType,
     val category: String,
-    val account: String
+    val account: String,
+    val month: String?
 )
 
 class AnalyticsViewModel(
@@ -43,10 +44,11 @@ class AnalyticsViewModel(
 
     private val _startDateMillis = MutableStateFlow<Long?>(null)
     private val _endDateMillis = MutableStateFlow<Long?>(null)
-    private val _groupBy = MutableStateFlow(GroupingType.DAILY)
+    private val _groupBy = MutableStateFlow(GroupingType.MONTHLY)
     private val _viewType = MutableStateFlow(AnalyticsViewType.SPENDS)
     private val _selectedCategory = MutableStateFlow("All")
     private val _selectedAccount = MutableStateFlow("All")
+    private val _selectedMonth = MutableStateFlow<String?>(null)
 
     private val formats = mapOf(
         GroupingType.DAILY to SimpleDateFormat("dd MMM", Locale.getDefault()),
@@ -59,9 +61,9 @@ class AnalyticsViewModel(
         _endDateMillis,
         _groupBy,
         _viewType,
-        combine(_selectedCategory, _selectedAccount) { c, a -> c to a }
-    ) { start, end, groupBy, viewType, catAcc ->
-        AnalyticsFilters(start, end, groupBy, viewType, catAcc.first, catAcc.second)
+        combine(_selectedCategory, _selectedAccount, _selectedMonth) { c, a, m -> Triple(c, a, m) }
+    ) { start, end, groupBy, viewType, triple ->
+        AnalyticsFilters(start, end, groupBy, viewType, triple.first, triple.second, triple.third)
     }
 
     val uiState: StateFlow<AnalyticsUiState> = combine(
@@ -74,27 +76,26 @@ class AnalyticsViewModel(
         val cats = listOf("All") + billableTxns.map { CategoryEngine.normalize(it.category) }.distinct().sorted()
         val accs = listOf("All") + billableTxns.map { it.accountHint.ifBlank { "Unknown" } }.distinct().sorted()
 
-        var filteredTxns = billableTxns
-        if (f.start != null) filteredTxns = filteredTxns.filter { it.transactionTime >= f.start }
-        if (f.end != null) filteredTxns = filteredTxns.filter { it.transactionTime <= (f.end + 86400000L - 1) }
-        if (f.category != "All") filteredTxns = filteredTxns.filter { CategoryEngine.normalize(it.category) == f.category }
-        if (f.account != "All") filteredTxns = filteredTxns.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
-
-        val income = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount }
-        val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
-        val debits = filteredTxns.filter { it.type == "DEBIT" }
-        val credits = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }
-        val avg = if (debits.isNotEmpty()) expense / debits.size else 0.0
+        var baseFiltered = billableTxns
+        if (f.start != null) baseFiltered = baseFiltered.filter { it.transactionTime >= f.start }
+        if (f.end != null) baseFiltered = baseFiltered.filter { it.transactionTime <= (f.end + 86400000L - 1) }
+        if (f.category != "All") baseFiltered = baseFiltered.filter { CategoryEngine.normalize(it.category) == f.category }
+        if (f.account != "All") baseFiltered = baseFiltered.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
 
         val trendFormat = formats[f.groupBy]!!
-        val trendSummaries = filteredTxns
+        // Trend chart shows all historical data for the selected category/account, ignoring date range filters
+        val trendBase = billableTxns.filter { txn ->
+            val matchesCategory = f.category == "All" || CategoryEngine.normalize(txn.category) == f.category
+            val matchesAccount = f.account == "All" || txn.accountHint.ifBlank { "Unknown" } == f.account
+            matchesCategory && matchesAccount
+        }
+        val trendSummaries = trendBase
             .groupBy {
                 val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
                 trendFormat.format(cal.time)
             }
             .map { (label, txns) -> label to txns }
             .sortedBy { (_, txns) -> txns.minOf { it.transactionTime } }
-            .takeLast(if (f.groupBy == GroupingType.DAILY) 14 else 12)
             .map { (label, txns) ->
                 TrendSummary(
                     label = label,
@@ -102,6 +103,22 @@ class AnalyticsViewModel(
                     expense = txns.filter { it.type == "DEBIT" }.sumOf { it.amount }
                 )
             }
+
+        val filteredTxns = if (f.month == null) {
+            baseFiltered
+        } else {
+            baseFiltered.filter {
+                val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
+                trendFormat.format(cal.time) == f.month
+            }
+        }
+
+        val income = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount }
+        val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
+        val debits = filteredTxns.filter { it.type == "DEBIT" }
+        val credits = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }
+        val avgDebit = if (debits.isNotEmpty()) expense / debits.size else 0.0
+        val avgCredit = if (credits.isNotEmpty()) income / credits.size else 0.0
 
         val categoryBreakdown = if (f.viewType == AnalyticsViewType.SPENDS) {
             debits
@@ -134,7 +151,8 @@ class AnalyticsViewModel(
             totalExpense = expense,
             net = income - expense,
             transactionCount = filteredTxns.size,
-            avgDebit = avg,
+            avgDebit = avgDebit,
+            avgCredit = avgCredit,
             trendSummaries = trendSummaries,
             categoryBreakdown = categoryBreakdown,
             customCategories = customCategories,
@@ -145,22 +163,78 @@ class AnalyticsViewModel(
             viewType = f.viewType,
             selectedCategory = f.category,
             selectedAccount = f.account,
+            selectedMonth = f.month,
             availableCategories = cats,
             availableAccounts = accs,
             filteredTransactions = filteredTxns.sortedByDescending { it.transactionTime },
             allTransactions = allTxns
         )
     }.stateIn(
-     scope = viewModelScope,
+        scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = AnalyticsUiState(isLoading = true)
     )
 
-    private val _drillDownTransactions = MutableStateFlow<List<SmsTransactionEntity>?>(null)
-    val drillDownTransactions: StateFlow<List<SmsTransactionEntity>?> = _drillDownTransactions.asStateFlow()
+    private val _currentDrillDown = MutableStateFlow<DrillDownType?>(null)
 
-    private val _drillDownTitle = MutableStateFlow("")
-    val drillDownTitle: StateFlow<String> = _drillDownTitle.asStateFlow()
+    val drillDownTitle: StateFlow<String> = _currentDrillDown.map { type ->
+        when (type) {
+            is DrillDownType.Income -> "Income Details"
+            is DrillDownType.Expense -> "Expense Details"
+            is DrillDownType.Category -> "${type.categoryName} Details"
+            is DrillDownType.Trend -> "Details for ${type.label}"
+            null -> ""
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val drillDownTransactions: StateFlow<List<SmsTransactionEntity>?> = combine(
+        repository.getAllTransactions(),
+        _currentDrillDown,
+        filters
+    ) { allTxns, drillDown, f ->
+        if (drillDown == null) return@combine null
+
+        val trendFormat = formats[f.groupBy]!!
+
+        var baseFiltered = allTxns
+        if (f.start != null) baseFiltered = baseFiltered.filter { it.transactionTime >= f.start }
+        if (f.end != null) baseFiltered = baseFiltered.filter { it.transactionTime <= (f.end + 86400000L - 1) }
+        if (f.account != "All") baseFiltered = baseFiltered.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
+
+        val monthFiltered = if (f.month == null) {
+            baseFiltered
+        } else {
+            baseFiltered.filter {
+                val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
+                trendFormat.format(cal.time) == f.month
+            }
+        }
+
+        when (drillDown) {
+            is DrillDownType.Income -> {
+                monthFiltered.filter { it.type == "CREDIT" }
+            }
+            is DrillDownType.Expense -> {
+                monthFiltered.filter { it.type == "DEBIT" }
+            }
+            is DrillDownType.Category -> {
+                monthFiltered.filter {
+                    val typeMatches = if (f.viewType == AnalyticsViewType.SPENDS) it.type == "DEBIT" else it.type == "CREDIT"
+                    typeMatches && CategoryEngine.normalize(it.category) == drillDown.categoryName
+                }
+            }
+            is DrillDownType.Trend -> {
+                allTxns.filter {
+                    val matchesCategory = f.category == "All" || CategoryEngine.normalize(it.category) == f.category
+                    val matchesAccount = f.account == "All" || it.accountHint.ifBlank { "Unknown" } == f.account
+                    if (matchesCategory && matchesAccount) {
+                        val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
+                        trendFormat.format(cal.time) == drillDown.label
+                    } else false
+                }
+            }
+        }.sortedByDescending { it.transactionTime }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun setDateRange(start: Long?, end: Long?) {
         _startDateMillis.value = start
@@ -168,51 +242,34 @@ class AnalyticsViewModel(
     }
 
     fun setViewType(type: AnalyticsViewType) { _viewType.value = type }
-    fun setAccountFilter(account: String) { _selectedAccount.value = account }
-    fun setCategoryFilter(category: String) { _selectedCategory.value = category }
+    fun setAccountFilter(account: String) {
+        _selectedAccount.value = if (_selectedAccount.value == account) "All" else account
+    }
+
+    fun setCategoryFilter(category: String) {
+        _selectedCategory.value = if (_selectedCategory.value == category) "All" else category
+    }
+
+    fun onMonthToggle(month: String) {
+        _selectedMonth.value = if (_selectedMonth.value == month) null else month
+    }
 
     fun clearFilters() {
         _startDateMillis.value = null
         _endDateMillis.value = null
         _selectedCategory.value = "All"
         _selectedAccount.value = "All"
-        _groupBy.value = GroupingType.DAILY
+        _selectedMonth.value = null
+        _groupBy.value = GroupingType.MONTHLY
         _viewType.value = AnalyticsViewType.SPENDS
     }
 
     fun openDrillDown(type: DrillDownType) {
-        val currentTxns = uiState.value.filteredTransactions
-
-        when (type) {
-            is DrillDownType.Income -> {
-                _drillDownTitle.value = "Income Details"
-                _drillDownTransactions.value = currentTxns.filter { it.type == "CREDIT" }
-            }
-            is DrillDownType.Expense -> {
-                _drillDownTitle.value = "Expense Details"
-                _drillDownTransactions.value = currentTxns.filter { it.type == "DEBIT" }
-            }
-            is DrillDownType.Category -> {
-                _drillDownTitle.value = "${type.categoryName} Details"
-                _drillDownTransactions.value = currentTxns.filter {
-                    val typeMatches = if (uiState.value.viewType == AnalyticsViewType.SPENDS) it.type == "DEBIT" else it.type == "CREDIT"
-                    typeMatches && CategoryEngine.normalize(it.category) == type.categoryName
-                }
-            }
-            is DrillDownType.Trend -> {
-                _drillDownTitle.value = "Details for ${type.label}"
-                val trendFormat = formats[uiState.value.groupBy]!!
-                _drillDownTransactions.value = currentTxns.filter {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                    trendFormat.format(cal.time) == type.label
-                }
-            }
-        }
+        _currentDrillDown.value = type
     }
 
     fun closeDrillDown() {
-        _drillDownTransactions.value = null
-        _drillDownTitle.value = ""
+        _currentDrillDown.value = null
     }
 
     fun saveTransaction(txn: SmsTransactionEntity) {

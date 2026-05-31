@@ -50,17 +50,12 @@ fun SettingsScreen(
     val viewModel: SettingsViewModel = viewModel(factory = factory)
     val uiState by viewModel.uiState.collectAsState()
 
-    // Handle Import Results
     LaunchedEffect(uiState.lastImportResult, uiState.lastImportMessage) {
         val result = uiState.lastImportResult
         val message = uiState.lastImportMessage
         
         if (result != null) {
-            val toastMsg = if (result.failed == 0 && result.skipped == 0) {
-                "Imported ${result.imported} transactions"
-            } else {
-                "Import Complete: ${result.imported} Success, ${result.failed} Failed, ${result.skipped} Skipped"
-            }
+            val toastMsg = "Messages scanned: ${result.scanned} --> Transactions imported: ${result.imported}"
             Toast.makeText(context, toastMsg, Toast.LENGTH_LONG).show()
             viewModel.clearImportResult()
         } else if (message.isNotBlank()) {
@@ -90,16 +85,35 @@ fun SettingsScreen(
         if (granted) viewModel.showDateRangePicker()
     }
 
-    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        viewModel.backupData(context, uri)
-    }
-
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.restoreData(context, uri)
     }
 
     val csvImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         viewModel.importFromCsv(uri)
+    }
+
+    var pendingBackupAfterFolderSelection by remember { mutableStateOf(false) }
+    var pendingAutoBackupAfterFolderSelection by remember { mutableStateOf(false) }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            val documentFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)
+            val folderName = documentFile?.name ?: "Selected Folder"
+            viewModel.updateBackupFolder(uri, folderName)
+            
+            if (pendingBackupAfterFolderSelection) {
+                viewModel.performManualBackup()
+                pendingBackupAfterFolderSelection = false
+            }
+            if (pendingAutoBackupAfterFolderSelection) {
+                viewModel.updateAutoBackupEnabled(true)
+                pendingAutoBackupAfterFolderSelection = false
+            }
+        } else {
+            pendingBackupAfterFolderSelection = false
+            pendingAutoBackupAfterFolderSelection = false
+        }
     }
 
     var showNameDialog by remember { mutableStateOf(false) }
@@ -112,12 +126,12 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp, top = 16.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Text(
             "Settings",
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
@@ -153,10 +167,32 @@ fun SettingsScreen(
 
         ManagementSection(
             onSmsAudit = onNavigateToSmsAudit,
-            onBackup = { backupLauncher.launch("ledgerpop_backup.dat") },
+            onBackup = {
+                if (uiState.backupFolderUri == null) {
+                    Toast.makeText(context, "Please select a backup folder first", Toast.LENGTH_LONG).show()
+                    pendingBackupAfterFolderSelection = true
+                    folderPickerLauncher.launch(null)
+                } else {
+                    viewModel.performManualBackup()
+                }
+            },
             onRestore = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
             onClearAll = { showClearDialog = true },
-            onRestart = { restartApp(context) }
+            onRestart = { restartApp(context) },
+            isAutoBackupEnabled = uiState.isAutoBackupEnabled,
+            onAutoBackupToggle = { enabled ->
+                if (enabled && uiState.backupFolderUri == null) {
+                    Toast.makeText(context, "Please select a backup folder to enable auto-backup", Toast.LENGTH_LONG).show()
+                    pendingAutoBackupAfterFolderSelection = true
+                    folderPickerLauncher.launch(null)
+                } else {
+                    viewModel.updateAutoBackupEnabled(enabled)
+                }
+            },
+            backupFrequency = uiState.backupFrequency,
+            onFrequencyChange = { viewModel.updateBackupFrequency(it) },
+            backupFolderName = uiState.backupFolderName ?: "Not Selected",
+            onSelectFolder = { folderPickerLauncher.launch(null) }
         )
 
         AboutSection()
@@ -337,7 +373,13 @@ private fun ManagementSection(
     onBackup: () -> Unit,
     onRestore: () -> Unit,
     onClearAll: () -> Unit,
-    onRestart: () -> Unit
+    onRestart: () -> Unit,
+    isAutoBackupEnabled: Boolean,
+    onAutoBackupToggle: (Boolean) -> Unit,
+    backupFrequency: String,
+    onFrequencyChange: (String) -> Unit,
+    backupFolderName: String,
+    onSelectFolder: () -> Unit
 ) {
     SectionCard(title = "Management") {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -348,10 +390,67 @@ private fun ManagementSection(
                     subtitle = "Review detected bank messages"
                 )
             }
+
+            MiniCard(onClick = { onAutoBackupToggle(!isAutoBackupEnabled) }) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Auto Backup", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        Text("Periodic background backup", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isAutoBackupEnabled,
+                        onCheckedChange = onAutoBackupToggle,
+                        thumbContent = if (isAutoBackupEnabled) {
+                            { Icon(Icons.Rounded.Check, null, Modifier.size(SwitchDefaults.IconSize)) }
+                        } else null
+                    )
+                }
+            }
+
+            if (isAutoBackupEnabled) {
+                MiniCard(onClick = onSelectFolder) {
+                    SettingRow(
+                        icon = Icons.Rounded.Folder,
+                        title = "Backup Location",
+                        subtitle = backupFolderName
+                    )
+                }
+
+                var showFrequencyMenu by remember { mutableStateOf(false) }
+                MiniCard(onClick = { showFrequencyMenu = true }) {
+                    SettingRow(
+                        icon = Icons.Rounded.Schedule,
+                        title = "Backup Frequency",
+                        subtitle = backupFrequency,
+                        trailing = {
+                            Box {
+                                Icon(Icons.Rounded.ArrowDropDown, null)
+                                DropdownMenu(
+                                    expanded = showFrequencyMenu,
+                                    onDismissRequest = { showFrequencyMenu = false }
+                                ) {
+                                    listOf("Hourly", "Daily", "Weekly", "Monthly").forEach { freq ->
+                                        DropdownMenuItem(
+                                            text = { Text(freq) },
+                                            onClick = {
+                                                onFrequencyChange(freq)
+                                                showFrequencyMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) {
                     MiniCard(onClick = onBackup) {
-                        Text("Backup", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.Medium)
+                        Text("Backup Now", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.Medium)
                     }
                 }
                 Box(Modifier.weight(1f)) {
@@ -557,7 +656,9 @@ private fun DateRangeImportDialog(
                     val start = dateRangePickerState.selectedStartDateMillis
                     val end = dateRangePickerState.selectedEndDateMillis
                     if (start != null && end != null) {
-                        onImport(start, end)
+                        // Ensure end date covers the full day (up to 23:59:59)
+                        val endOfDay = end + (24 * 60 * 60 * 1000) - 1
+                        onImport(start, endOfDay)
                     }
                 }
             ) { Text("Import") }

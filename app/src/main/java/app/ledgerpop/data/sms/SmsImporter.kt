@@ -9,12 +9,17 @@ import app.ledgerpop.data.local.SmsAuditDao
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.data.local.SmsTransactionDao
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.data.local.AccountAliasDao
+import app.ledgerpop.data.local.AccountDao
+import app.ledgerpop.data.local.AccountEntity
+import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.parser.SmsParser
 
 data class ImportResult(
     val imported: Int = 0,
     val failed: Int = 0,
-    val skipped: Int = 0
+    val skipped: Int = 0,
+    val scanned: Int = 0
 )
 
 class SmsImporter(
@@ -22,8 +27,8 @@ class SmsImporter(
     private val smsReader: SmsReader,
     private val dao: SmsTransactionDao,
     private val auditDao: SmsAuditDao,
-    private val aliasDao: app.ledgerpop.data.local.AccountAliasDao? = null,
-    private val accountDao: app.ledgerpop.data.local.AccountDao? = null
+    private val aliasDao: AccountAliasDao? = null,
+    private val accountDao: AccountDao? = null
 ) {
 
     private val TAG = "LedgerPop"
@@ -34,10 +39,38 @@ class SmsImporter(
         // Auto-create account if it doesn't exist
         if (target.isNotBlank() && accountDao != null) {
             if (accountDao.getByName(target) == null) {
-                accountDao.insert(app.ledgerpop.data.local.AccountEntity(name = target))
+                accountDao.insert(AccountEntity(name = target))
             }
         }
         return target
+    }
+
+    private suspend fun resolveMerchantName(name: String): String {
+        if (name.isBlank()) return ""
+        // Use the alias system to resolve merchant names as well
+        return aliasDao?.getTargetName(name) ?: name
+    }
+
+    private suspend fun resolveCategory(merchant: String, body: String, sender: String): String {
+        if (merchant.isBlank()) return CategoryEngine.categorize(merchant, body, sender)
+        
+        // 1. Try lookback in history for this merchant (using normalized name for better hits)
+        val normalized = CategoryEngine.normalizeMerchant(merchant)
+        
+        // Exact match check
+        dao.getLastCategoryForMerchant(normalized)?.let { return it }
+        dao.getLastCategoryForMerchant(merchant)?.let { return it }
+        
+        // Fuzzy match check (prefix/keyword matching)
+        if (normalized.length >= 3) {
+            dao.getLastCategoryForMerchantFuzzy(normalized)?.let { return it }
+        }
+        if (merchant.length >= 3) {
+            dao.getLastCategoryForMerchantFuzzy(merchant)?.let { return it }
+        }
+        
+        // 2. Fallback to CategoryEngine auto-categorization
+        return CategoryEngine.categorize(merchant, body, sender)
     }
 
     suspend fun importInbox(
@@ -58,11 +91,13 @@ class SmsImporter(
         var imported = 0
         var failed = 0
         var skipped = 0
+        var scanned = 0
 
         for (msg in messages) {
             if (fromMillis != null && msg.timestamp < fromMillis) continue
             if (toMillis != null && msg.timestamp > toMillis) continue
 
+            scanned++
             val shouldProcess = SmsFilter.shouldProcess(msg.sender, msg.body)
             val reason = SmsFilter.skipReason(msg.sender, msg.body)
 
@@ -84,7 +119,7 @@ class SmsImporter(
                 continue
             }
 
-            val parsed = app.ledgerpop.data.parser.SmsParser.parse(msg.sender, msg.body)
+            val parsed = SmsParser.parse(msg.sender, msg.body)
             if (parsed == null) {
                 val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
                 auditToInsert.add(
@@ -109,17 +144,18 @@ class SmsImporter(
                 continue
             }
 
+            val merchant = resolveMerchantName(parsed.merchant)
             transactionsToInsert.add(
                 SmsTransactionEntity(
                     sender = msg.sender,
                     body = msg.body,
                     amount = parsed.amount,
                     type = parsed.type,
-                    merchant = parsed.merchant,
-                    category = parsed.category,
+                    merchant = merchant,
+                    category = resolveCategory(merchant, msg.body, msg.sender),
                     bank = parsed.bank,
                     accountHint = resolveAccountName(parsed.accountName),
-                    isBillable = true,
+                    isBillable = parsed.includeInAnalytics,
                     transactionTime = msg.timestamp,
                     hashKey = hashKey
                 )
@@ -146,8 +182,8 @@ class SmsImporter(
             auditDao.insertAll(auditToInsert)
         }
 
-        Log.d(TAG, "Import complete. $imported imported, $failed failed, $skipped skipped")
-        return ImportResult(imported, failed, skipped)
+        Log.d(TAG, "Import complete. $imported imported, $failed failed, $skipped skipped, $scanned scanned")
+        return ImportResult(imported, failed, skipped, scanned)
     }
 
     suspend fun importSingle(msg: SmsMessage): SmsTransactionEntity? {
@@ -205,27 +241,30 @@ class SmsImporter(
             return null
         }
 
+        val resolvedMerchant = resolveMerchantName(parsed.merchant)
+
         val entity = SmsTransactionEntity(
             sender = msg.sender,
             body = msg.body,
             amount = parsed.amount,
             type = parsed.type,
-            merchant = parsed.merchant,
+            merchant = resolvedMerchant,
 
-            // Map the newly extracted category
-            category = parsed.category,
+            // Map the newly extracted category or lookback history
+            category = resolveCategory(resolvedMerchant, msg.body, msg.sender),
 
             bank = parsed.bank,
 
             // Map the newly extracted Account string: "SBI (3456)" instead of just the last 4
             accountHint = resolveAccountName(parsed.accountName),
 
-            isBillable = true,
+            isBillable = parsed.includeInAnalytics,
             transactionTime = msg.timestamp,
             hashKey = hashKey
         )
 
-        dao.insert(entity)
+        val insertedId = dao.insert(entity).toInt()
+        val savedEntity = entity.copy(id = insertedId)
 
         auditDao.insert(
             SmsAuditEntity(
@@ -240,7 +279,7 @@ class SmsImporter(
             )
         )
 
-        return entity
+        return savedEntity
     }
 
     private fun buildHashKey(

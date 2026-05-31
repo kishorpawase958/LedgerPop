@@ -1,6 +1,7 @@
 package app.ledgerpop.ui.viewmodel
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -14,7 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-data class HomeInsight(val icon: String, val message: String)
+data class HomeInsight(val icon: String, val title: String, val message: String)
 
 data class CategoryAggregate(val category: String, val amount: Double)
 
@@ -28,9 +29,11 @@ data class HomeUiState(
     val thisMonthIncome: Double = 0.0,
     val thisMonthExpense: Double = 0.0,
     val thisMonthBalance: Double = 0.0,
+    val thisMonthInvestment: Double = 0.0,
     val lastMonthExpense: Double = 0.0,
     val insights: List<HomeInsight> = emptyList(),
     val monthlyBudget: Double = 0.0,
+    val userName: String = "User",
     val isLoading: Boolean = true
 )
 
@@ -40,8 +43,42 @@ class HomeViewModel(
 ) : ViewModel() {
 
     private val sharedPrefs = context.applicationContext.getSharedPreferences("ledgerpop_prefs", Context.MODE_PRIVATE)
+
+    private fun getBudgetKey(year: Int, month: Int) = "budget_${year}_$month"
+
+    private fun getCurrentMonthBudget(year: Int, month: Int): Double {
+        val key = getBudgetKey(year, month)
+
+        if (sharedPrefs.contains(key)) {
+            return sharedPrefs.getFloat(key, 0f).toDouble()
+        }
+
+        // Try to carry over from previous month
+        val prevCal = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            add(Calendar.MONTH, -1)
+        }
+        val prevKey = getBudgetKey(prevCal.get(Calendar.YEAR), prevCal.get(Calendar.MONTH))
+
+        val carryOverBudget = if (sharedPrefs.contains(prevKey)) {
+            sharedPrefs.getFloat(prevKey, 0f)
+        } else {
+            sharedPrefs.getFloat("monthly_budget", 0f)
+        }
+
+        if (carryOverBudget > 0f) {
+            sharedPrefs.edit { putFloat(key, carryOverBudget) }
+        }
+        return carryOverBudget.toDouble()
+    }
+
     private val _uiState = MutableStateFlow(HomeUiState(
-        monthlyBudget = sharedPrefs.getFloat("monthly_budget", 0f).toDouble()
+        monthlyBudget = run {
+            val cal = Calendar.getInstance()
+            getCurrentMonthBudget(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH))
+        },
+        userName = sharedPrefs.getString("user_name", "User") ?: "User"
     ))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
@@ -87,6 +124,10 @@ class HomeViewModel(
                     it.type == "DEBIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear
                 }
 
+                val thisMonthInvestment = billable
+                    .filter { it.type == "DEBIT" && it.category == "Investments" && txnMonth(it) == thisMonth && txnYear(it) == thisYear }
+                    .sumOf { it.amount }
+
                 val topCategories = thisMonthDebits
                     .groupBy { it.category }
                     .map { (cat, txns) ->
@@ -99,7 +140,15 @@ class HomeViewModel(
                     .sortedByDescending { it.amount }
                     .take(3)
 
-                val insights = buildInsights(income, expense, thisMonthExpense, lastMonthExpense, billable)
+                val insights = buildInsights(
+                    income = thisMonthIncome,
+                    expense = thisMonthExpense,
+                    thisMonthExpense = thisMonthExpense,
+                    lastMonthExpense = lastMonthExpense,
+                    thisMonthIncome = thisMonthIncome,
+                    thisMonthInvestment = thisMonthInvestment,
+                    transactions = billable.filter { txnMonth(it) == thisMonth && txnYear(it) == thisYear }
+                )
 
                 _uiState.update {
                     it.copy(
@@ -112,8 +161,10 @@ class HomeViewModel(
                         thisMonthIncome = thisMonthIncome,
                         thisMonthExpense = thisMonthExpense,
                         thisMonthBalance = thisMonthIncome - thisMonthExpense,
+                        thisMonthInvestment = thisMonthInvestment,
                         lastMonthExpense = lastMonthExpense,
                         insights = insights,
+                        monthlyBudget = getCurrentMonthBudget(thisYear, thisMonth),
                         isLoading = false
                     )
                 }
@@ -133,30 +184,85 @@ class HomeViewModel(
     }
 
     fun updateBudget(budget: Double) {
-        sharedPrefs.edit().putFloat("monthly_budget", budget.toFloat()).apply()
+        val cal = Calendar.getInstance()
+        val key = getBudgetKey(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH))
+        sharedPrefs.edit {
+            putFloat(key, budget.toFloat())
+            putFloat("monthly_budget", budget.toFloat())
+        }
         _uiState.update { it.copy(monthlyBudget = budget) }
     }
 
     private fun buildInsights(
         income: Double,
         expense: Double,
-        thisMonth: Double,
-        lastMonth: Double,
+        thisMonthExpense: Double,
+        lastMonthExpense: Double,
+        thisMonthIncome: Double,
+        thisMonthInvestment: Double,
         transactions: List<SmsTransactionEntity>
     ): List<HomeInsight> {
         val list = mutableListOf<HomeInsight>()
-        if (income > 0 && expense / income > 0.8)
-            list.add(HomeInsight("⚠️", "You've spent over 80% of your income"))
-        if (lastMonth > 0 && thisMonth > lastMonth * 1.2)
-            list.add(HomeInsight("📈", "Spending is up 20%+ vs last month"))
-        if (lastMonth > 0 && thisMonth < lastMonth * 0.8)
-            list.add(HomeInsight("🎉", "Great job! Spending down vs last month"))
+
+        if (thisMonthIncome > 0 && thisMonthInvestment > 0) {
+            val percentage = ((thisMonthInvestment / thisMonthIncome) * 100).toInt()
+            list.add(
+                HomeInsight(
+                    "💸",
+                    "INVESTMENTS",
+                    "You have invested $percentage% of your income"
+                )
+            )
+        }
+
+        if (income > 0) {
+            val spentPct = ((expense / income) * 100).toInt()
+            if (spentPct > 75) {
+                list.add(
+                    HomeInsight(
+                        "⚠️",
+                        "SPENDING LIMIT",
+                        "You have spent over $spentPct% of your income"
+                    )
+                )
+            }
+        }
+
+        if (lastMonthExpense > 0 && thisMonthExpense > lastMonthExpense * 1.2) {
+            list.add(
+                HomeInsight(
+                    "📈",
+                    "MONTHLY TREND",
+                    "Spending is up 20%+ vs last month"
+                )
+            )
+        }
+
+        if (lastMonthExpense > 0 && thisMonthExpense < lastMonthExpense * 0.8) {
+            list.add(
+                HomeInsight(
+                    "🎉",
+                    "SAVINGS",
+                    "Great job! Spending down vs last month"
+                )
+            )
+        }
+
         val topCategory = transactions
             .filter { it.type == "DEBIT" }
             .groupBy { it.category }
             .maxByOrNull { it.value.sumOf { t -> t.amount } }
-        if (topCategory != null && topCategory.key.isNotBlank())
-            list.add(HomeInsight("🏷️", "Top spend category: ${topCategory.key}"))
+
+        if (topCategory != null && topCategory.key.isNotBlank()) {
+            list.add(
+                HomeInsight(
+                    "🏷️",
+                    "TOP CATEGORY",
+                    "Main spend: ${topCategory.key}"
+                )
+            )
+        }
+
         return list
     }
 

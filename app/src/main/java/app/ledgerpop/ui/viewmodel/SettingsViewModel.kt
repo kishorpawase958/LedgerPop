@@ -1,10 +1,14 @@
 package app.ledgerpop.ui.viewmodel
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -19,6 +23,8 @@ import app.ledgerpop.data.sms.SmsReader
 import app.ledgerpop.ui.state.AppTheme
 import app.ledgerpop.ui.state.SettingsUiState
 import app.ledgerpop.data.local.SmsAuditEntity
+import app.ledgerpop.data.backup.BackupScheduler
+import app.ledgerpop.data.backup.BackupManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +34,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
@@ -46,10 +51,15 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow(SettingsUiState(
         appTheme = try {
             AppTheme.valueOf(sharedPrefs.getString("app_theme", AppTheme.AUTO.name) ?: AppTheme.AUTO.name)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             AppTheme.AUTO
         },
-        userName = sharedPrefs.getString("user_name", "Kishor") ?: "Kishor"
+        userName = sharedPrefs.getString("user_name", "User") ?: "User",
+        isAutoBackupEnabled = sharedPrefs.getBoolean("auto_backup_enabled", false),
+        backupFrequency = sharedPrefs.getString("backup_frequency", "Daily") ?: "Daily",
+        backupFolderUri = sharedPrefs.getString("backup_folder_uri", null),
+        backupFolderName = sharedPrefs.getString("backup_folder_name", null),
+        isFirstRun = sharedPrefs.getBoolean("is_first_run", true)
     ))
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
@@ -61,6 +71,8 @@ class SettingsViewModel(
         db.accountAliasDao(),
         db.accountDao()
     )
+
+    private val backupScheduler = BackupScheduler(appContext)
 
     init {
         refreshPermissions()
@@ -82,13 +94,19 @@ class SettingsViewModel(
                 _uiState.update { it.copy(accounts = list) }
             }
         }
+        // Observe account aliases
+        viewModelScope.launch {
+            db.accountAliasDao().getAllAliasesFlow().collect { list ->
+                _uiState.update { it.copy(accountAliases = list) }
+            }
+        }
         syncAccountsFromTransactions()
+        backupScheduler.scheduleBackup(uiState.value.isAutoBackupEnabled, uiState.value.backupFrequency)
     }
 
     private fun syncAccountsFromTransactions() {
         viewModelScope.launch {
             val accountNames = db.smsTransactionDao().getAllAccounts()
-            val existingAccounts = db.accountDao().getAllSync().map { it.name }
             accountNames.forEach { name ->
                 val resolved = db.accountAliasDao().getTargetName(name) ?: name
                 if (db.accountDao().getByName(resolved) == null) {
@@ -99,16 +117,22 @@ class SettingsViewModel(
     }
 
     fun updateTheme(theme: AppTheme) {
-        sharedPrefs.edit().putString("app_theme", theme.name).apply()
+        sharedPrefs.edit { putString("app_theme", theme.name) }
         _uiState.update { it.copy(appTheme = theme) }
     }
 
     fun refreshPermissions() {
         val readGranted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
         val receiveGranted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
         _uiState.update { it.copy(
             hasReadSmsPermission = readGranted,
-            hasReceiveSmsPermission = receiveGranted
+            hasReceiveSmsPermission = receiveGranted,
+            hasNotificationsPermission = notificationsGranted
         ) }
     }
 
@@ -121,7 +145,7 @@ class SettingsViewModel(
                 _uiState.update { it.copy(
                     isImporting = false,
                     lastImportResult = result,
-                    lastImportMessage = "Imported ${result.imported} new transactions."
+                    lastImportMessage = "Transactions imported:${result.imported}"
                 ) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(
@@ -146,7 +170,7 @@ class SettingsViewModel(
                 _uiState.update { it.copy(
                     isImporting = false,
                     lastImportResult = result,
-                    lastImportMessage = "Imported ${result.imported} new transactions from the selected range."
+                    lastImportMessage = "Transactions imported:${result.imported}"
                 ) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(
@@ -174,22 +198,55 @@ class SettingsViewModel(
         ) }
     }
 
-    fun clearDateRange() {
-        _uiState.update { it.copy(dateRangeFromMillis = null, dateRangeToMillis = null) }
+    fun setFirstRunComplete() {
+        sharedPrefs.edit { putBoolean("is_first_run", false) }
+        _uiState.update { it.copy(isFirstRun = false) }
     }
 
     fun updateUserName(newName: String) {
-        sharedPrefs.edit().putString("user_name", newName).apply()
+        sharedPrefs.edit { putString("user_name", newName) }
         _uiState.update { it.copy(userName = newName) }
     }
 
-    fun updateCategoryEmoji(categoryName: String, emoji: String, type: String) {
+    fun updateAutoBackupEnabled(enabled: Boolean) {
+        sharedPrefs.edit { putBoolean("auto_backup_enabled", enabled) }
+        _uiState.update { it.copy(isAutoBackupEnabled = enabled) }
+        backupScheduler.scheduleBackup(enabled, uiState.value.backupFrequency)
+    }
+
+    fun updateBackupFrequency(frequency: String) {
+        sharedPrefs.edit { putString("backup_frequency", frequency) }
+        _uiState.update { it.copy(backupFrequency = frequency) }
+        backupScheduler.scheduleBackup(uiState.value.isAutoBackupEnabled, frequency)
+    }
+
+    fun updateBackupFolder(uri: Uri, name: String) {
+        // Take persistable permission
+        try {
+            appContext.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+            // Log error
+        }
+        
+        sharedPrefs.edit {
+            putString("backup_folder_uri", uri.toString())
+            putString("backup_folder_name", name)
+        }
+        _uiState.update { it.copy(backupFolderUri = uri.toString(), backupFolderName = name) }
+    }
+
+    fun updateCategory(id: Int?, oldName: String, newName: String, emoji: String, type: String) {
         viewModelScope.launch {
-            val existing = db.customCategoryDao().getByName(categoryName)
-            if (existing != null) {
-                db.customCategoryDao().insert(existing.copy(emoji = emoji))
+            if (id != null) {
+                db.customCategoryDao().insert(CustomCategoryEntity(id = id, name = newName, emoji = emoji, type = type))
             } else {
-                db.customCategoryDao().insert(CustomCategoryEntity(name = categoryName, type = type, emoji = emoji))
+                db.customCategoryDao().insert(CustomCategoryEntity(name = newName, type = type, emoji = emoji))
+            }
+            if (oldName != newName) {
+                db.smsTransactionDao().updateCategoryName(oldName, newName)
             }
         }
     }
@@ -206,14 +263,14 @@ class SettingsViewModel(
         }
     }
 
-    fun updateAccount(id: Int, newName: String, newIcon: String) {
+    fun updateAccount(id: Int, newName: String, newIcon: String, newType: String) {
         viewModelScope.launch {
             val accounts = db.accountDao().getAllSync()
             val existing = accounts.find { it.id == id } ?: return@launch
             val oldName = existing.name
 
             // 1. Update the account itself
-            db.accountDao().insert(existing.copy(name = newName, icon = newIcon))
+            db.accountDao().insert(existing.copy(name = newName, icon = newIcon, type = newType))
 
             // 2. If name changed, update transactions and aliases
             if (oldName != newName) {
@@ -260,20 +317,9 @@ class SettingsViewModel(
         }
     }
 
-    fun updateAccountIcon(accountName: String, icon: String) {
+    fun addAccount(name: String, icon: String, type: String) {
         viewModelScope.launch {
-            val existing = db.accountDao().getByName(accountName)
-            if (existing != null) {
-                db.accountDao().insert(existing.copy(icon = icon))
-            } else {
-                db.accountDao().insert(AccountEntity(name = accountName, icon = icon))
-            }
-        }
-    }
-
-    fun addAccount(name: String, icon: String) {
-        viewModelScope.launch {
-            db.accountDao().insert(AccountEntity(name = name, icon = icon))
+            db.accountDao().insert(AccountEntity(name = name, icon = icon, type = type))
         }
     }
 
@@ -287,113 +333,94 @@ class SettingsViewModel(
         _uiState.update { it.copy(lastImportResult = null, lastImportMessage = "") }
     }
 
-    fun deleteAll() {
+    fun performManualBackup() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isClearing = true) }
+            _uiState.update { it.copy(isImporting = true, lastImportMessage = "Creating rolling backup...") }
             try {
-                db.smsTransactionDao().deleteAll()
-                db.smsAuditDao().deleteAll()
-                db.customCategoryDao().deleteAll()
-                db.accountDao().deleteAll()
-                _uiState.update { it.copy(isClearing = false, lastImportMessage = "All data cleared successfully.") }
+                val success = withContext(Dispatchers.IO) {
+                    val backupManager = BackupManager(appContext)
+                    backupManager.createAutomaticBackup()
+                }
+                if (success) {
+                    _uiState.update { it.copy(
+                        isImporting = false, 
+                        lastImportMessage = "Backup created successfully in your selected folder."
+                    ) }
+                } else {
+                    _uiState.update { it.copy(
+                        isImporting = false, 
+                        lastImportMessage = "Backup failed: Could not access selected folder. Please re-select it."
+                    ) }
+                }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isClearing = false, lastImportMessage = "Clear failed: ${e.message}") }
+                _uiState.update { it.copy(
+                    isImporting = false, 
+                    lastImportMessage = "Backup failed: ${e.message}"
+                ) }
             }
         }
     }
 
-    fun backupData(context: Context, uri: Uri?) {
-        if (uri == null) return
-        viewModelScope.launch(Dispatchers.IO) {
+    fun deleteAll() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isClearing = true) }
             try {
-                // Fetch all data from DB
-                val transactions = db.smsTransactionDao().getAllTransactionsSync()
-                val audits = db.smsAuditDao().getAllSync()
-                val categories = db.customCategoryDao().getAllSync()
-
-                val root = JSONObject()
-                root.put("backupVersion", 2)
-                root.put("timestamp", System.currentTimeMillis())
-                root.put("appName", "LedgerPop")
-
-                // 1. Preferences
-                val prefsJson = JSONObject()
-                prefsJson.put("appTheme", uiState.value.appTheme.name)
-                prefsJson.put("userName", uiState.value.userName)
-                root.put("preferences", prefsJson)
-
-                // 2. Transactions
-                val txnsArray = JSONArray()
-                transactions.forEach { txn ->
-                    val obj = JSONObject()
-                    obj.put("sender", txn.sender)
-                    obj.put("body", txn.body)
-                    obj.put("amount", txn.amount)
-                    obj.put("type", txn.type)
-                    obj.put("merchant", txn.merchant)
-                    obj.put("category", txn.category)
-                    obj.put("accountHint", txn.accountHint)
-                    obj.put("isBillable", txn.isBillable)
-                    obj.put("transactionTime", txn.transactionTime)
-                    obj.put("hashKey", txn.hashKey)
-                    obj.put("bank", txn.bank)
-                    obj.put("note", txn.note)
-                    txnsArray.put(obj)
-                }
-                root.put("transactions", txnsArray)
-
-                // 3. Audits
-                val auditsArray = JSONArray()
-                audits.forEach { audit ->
-                    val obj = JSONObject()
-                    obj.put("sender", audit.sender)
-                    obj.put("body", audit.body)
-                    obj.put("timestamp", audit.timestamp)
-                    obj.put("status", audit.status)
-                    obj.put("skipReason", audit.skipReason)
-                    obj.put("parsedAmount", audit.parsedAmount)
-                    obj.put("parsedType", audit.parsedType)
-                    obj.put("hashKey", audit.hashKey)
-                    obj.put("reportType", audit.reportType)
-                    obj.put("reportNote", audit.reportNote)
-                    auditsArray.put(obj)
-                }
-                root.put("auditLogs", auditsArray)
-
-                // 4. Custom Categories
-                val categoriesArray = JSONArray()
-                categories.forEach { cat ->
-                    val obj = JSONObject()
-                    obj.put("name", cat.name)
-                    obj.put("type", cat.type)
-                    obj.put("emoji", cat.emoji)
-                    categoriesArray.put(obj)
-                }
-                root.put("customCategories", categoriesArray)
-
-                // 5. Accounts
-                val accounts = db.accountDao().getAllSync()
-                val accountsArray = JSONArray()
-                accounts.forEach { acc ->
-                    val obj = JSONObject()
-                    obj.put("name", acc.name)
-                    obj.put("icon", acc.icon)
-                    accountsArray.put(obj)
-                }
-                root.put("accounts", accountsArray)
-
-                // Write to file
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    output.write(root.toString(2).toByteArray())
+                // 1. Revoke all persisted URI permissions
+                appContext.contentResolver.persistedUriPermissions.forEach { permission ->
+                    try {
+                        appContext.contentResolver.releasePersistableUriPermission(
+                            permission.uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
                 }
 
-                withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(lastImportMessage = "Full backup (${transactions.size} transactions) saved successfully.") }
+                // 2. Revoke SMS permissions if supported (API 33+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    try {
+                        val permissionsToRevoke = mutableListOf<String>()
+                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+                            permissionsToRevoke.add(Manifest.permission.READ_SMS)
+                        }
+                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED) {
+                            permissionsToRevoke.add(Manifest.permission.RECEIVE_SMS)
+                        }
+                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                            permissionsToRevoke.add(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        if (permissionsToRevoke.isNotEmpty()) {
+                            appContext.revokeSelfPermissionsOnKill(permissionsToRevoke)
+                        }
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
+                }
+
+                // 3. The nuclear option: Clear all application user data
+                // This will wipe the database, shared preferences, cache, and internal files.
+                // It will also kill the app process, ensuring a clean state on next launch.
+                val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                val success = am.clearApplicationUserData()
+                
+                if (!success) {
+                    // Fallback if the system call fails
+                    db.smsTransactionDao().deleteAll()
+                    db.smsAuditDao().deleteAll()
+                    db.customCategoryDao().deleteAll()
+                    db.accountDao().deleteAll()
+                    db.accountAliasDao().deleteAll()
+                    sharedPrefs.edit().clear().putBoolean("is_first_run", true).apply()
+                    
+                    _uiState.update { it.copy(
+                        isClearing = false, 
+                        lastImportMessage = "Partial clear successful. Some data may remain.",
+                        isFirstRun = true
+                    ) }
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(lastImportMessage = "Backup failed: ${e.message}") }
-                }
+                _uiState.update { it.copy(isClearing = false, lastImportMessage = "Clear failed: ${e.message}") }
             }
         }
     }
@@ -413,17 +440,46 @@ class SettingsViewModel(
                 if (root.has("preferences")) {
                     val prefs = root.getJSONObject("preferences")
                     val theme = prefs.optString("appTheme", AppTheme.AUTO.name)
-                    val name = prefs.optString("userName", "Kishor")
+                    val name = prefs.optString("userName", "User")
+                    val autoBackup = prefs.optBoolean("autoBackupEnabled", false)
+                    val backupFreq = prefs.optString("backupFrequency", "Daily")
+                    val folderUri: String? = if (!prefs.isNull("backupFolderUri")) prefs.optString("backupFolderUri") else null
+                    val folderName: String? = if (!prefs.isNull("backupFolderName")) prefs.optString("backupFolderName") else null
                     
-                    sharedPrefs.edit()
-                        .putString("app_theme", theme)
-                        .putString("user_name", name)
-                        .apply()
+                    sharedPrefs.edit {
+                        putString("app_theme", theme)
+                        putString("user_name", name)
+                        putBoolean("auto_backup_enabled", autoBackup)
+                        putString("backup_frequency", backupFreq)
+                        if (folderUri != null) putString("backup_folder_uri", folderUri)
+                        if (folderName != null) putString("backup_folder_name", folderName)
+                    }
                         
                     _uiState.update { it.copy(
                         appTheme = try { AppTheme.valueOf(theme) } catch (e: Exception) { AppTheme.AUTO },
-                        userName = name
+                        userName = name,
+                        isAutoBackupEnabled = autoBackup,
+                        backupFrequency = backupFreq,
+                        backupFolderUri = folderUri,
+                        backupFolderName = folderName
                     ) }
+
+                    backupScheduler.scheduleBackup(autoBackup, backupFreq)
+                }
+
+                // 1.1 Restore Budgets
+                if (root.has("budgets")) {
+                    val budgets = root.getJSONObject("budgets")
+                    sharedPrefs.edit {
+                        budgets.keys().forEach { key ->
+                            val value = budgets.get(key)
+                            if (value is Number) {
+                                putFloat(key, value.toFloat())
+                            } else if (value is String) {
+                                value.toFloatOrNull()?.let { putFloat(key, it) }
+                            }
+                        }
+                    }
                 }
 
                 // 2. Restore Transactions
@@ -433,10 +489,11 @@ class SettingsViewModel(
                     for (i in 0 until txnsArray.length()) {
                         val obj = txnsArray.getJSONObject(i)
                         txns.add(SmsTransactionEntity(
-                            id = 0, // Let Room auto-generate
+                            id = obj.optInt("id", 0),
                             sender = obj.getString("sender"),
                             body = obj.getString("body"),
                             amount = obj.getDouble("amount"),
+                            originalAmount = if (obj.has("originalAmount") && !obj.isNull("originalAmount")) obj.getDouble("originalAmount") else null,
                             type = obj.getString("type"),
                             merchant = obj.getString("merchant"),
                             category = obj.getString("category"),
@@ -445,7 +502,8 @@ class SettingsViewModel(
                             transactionTime = obj.getLong("transactionTime"),
                             hashKey = obj.getString("hashKey"),
                             bank = obj.optString("bank", ""),
-                            note = obj.optString("note", "")
+                            note = obj.optString("note", ""),
+                            linkedTransactionId = if (obj.has("linkedTransactionId") && !obj.isNull("linkedTransactionId")) obj.getInt("linkedTransactionId") else null
                         ))
                     }
                     // Wipe and restore transactions
@@ -488,7 +546,7 @@ class SettingsViewModel(
                     for (i in 0 until categoriesArray.length()) {
                         val obj = categoriesArray.getJSONObject(i)
                         categories.add(CustomCategoryEntity(
-                            id = 0,
+                            id = obj.optInt("id", 0),
                             name = obj.getString("name"),
                             type = obj.getString("type"),
                             emoji = obj.getString("emoji")
@@ -505,13 +563,27 @@ class SettingsViewModel(
                     for (i in 0 until accountsArray.length()) {
                         val obj = accountsArray.getJSONObject(i)
                         accounts.add(AccountEntity(
-                            id = 0,
+                            id = obj.optInt("id", 0),
                             name = obj.getString("name"),
-                            icon = obj.getString("icon")
+                            icon = obj.getString("icon"),
+                            type = obj.optString("type", "BANK")
                         ))
                     }
                     db.accountDao().deleteAll()
                     accounts.forEach { db.accountDao().insert(it) }
+                }
+
+                // 6. Restore Aliases
+                val aliasesArray = root.optJSONArray("accountAliases")
+                if (aliasesArray != null) {
+                    db.accountAliasDao().deleteAll()
+                    for (i in 0 until aliasesArray.length()) {
+                        val obj = aliasesArray.getJSONObject(i)
+                        db.accountAliasDao().insert(AccountAliasEntity(
+                            alias = obj.getString("alias"),
+                            targetAccountName = obj.getString("targetAccountName")
+                        ))
+                    }
                 }
 
                 withContext(Dispatchers.Main) {

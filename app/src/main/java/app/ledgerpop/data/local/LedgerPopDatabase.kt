@@ -13,7 +13,7 @@ import androidx.room.RoomDatabase
         AccountEntity::class,
         AccountAliasEntity::class
     ],
-    version = 8, // bumped from 7
+    version = 9, // bumped from 8
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {

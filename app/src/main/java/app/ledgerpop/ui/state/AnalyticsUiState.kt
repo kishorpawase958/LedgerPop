@@ -9,6 +9,7 @@ data class AnalyticsUiState(
     val net: Double = 0.0,
     val transactionCount: Int = 0,
     val avgDebit: Double = 0.0,
+    val avgCredit: Double = 0.0,
     val trendSummaries: List<TrendSummary> = emptyList(),
     val categoryBreakdown: List<CategorySummary> = emptyList(),
     val customCategories: List<CustomCategoryEntity> = emptyList(),
@@ -21,6 +22,7 @@ data class AnalyticsUiState(
     val viewType: AnalyticsViewType = AnalyticsViewType.SPENDS,
     val selectedCategory: String = "All",
     val selectedAccount: String = "All",
+    val selectedMonth: String? = null,
 
     // Available Filter Options
     val availableCategories: List<String> = listOf("All"),

@@ -4,4 +4,7 @@
     <color name="primary_purple_dark">#7B1FA2</color>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
+    <color name="notification_text_primary">#000000</color>
+    <color name="notification_text_secondary">#808080</color>
+    <color name="notification_link">#0066EE</color>
 </resources>

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import app.ledgerpop.data.local.LedgerPopDatabase
+import app.ledgerpop.data.notifications.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -50,7 +51,10 @@ class SmsReceiver : BroadcastReceiver() {
                         auditDao = auditDao
                     )
 
-                    importer.importSingle(msg)
+                    val entity = importer.importSingle(msg)
+                    if (entity != null) {
+                        NotificationHelper.showTransactionNotification(context, entity)
+                    }
                 }
             } finally {
                 pendingResult.finish()

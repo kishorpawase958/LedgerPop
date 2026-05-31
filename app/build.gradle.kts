@@ -13,8 +13,8 @@ android {
         minSdk = 31
         //noinspection OldTargetApi
         targetSdk = 37
-        versionCode = 4           // ← increase by 1 from last time (was 3)
-        versionName = "1.3.0"     // ← change from "1.2.0" to "1.3.0"
+        versionCode = 5           // ← increase by 1 from last time (was 4)
+        versionName = "2.0.0"     // ← change from "1.3.0" to "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -56,6 +56,8 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.compose.material.icons)
     implementation(libs.haze)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)

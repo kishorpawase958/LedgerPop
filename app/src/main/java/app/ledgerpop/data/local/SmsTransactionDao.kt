@@ -51,6 +51,9 @@ interface SmsTransactionDao {
     @Query("UPDATE sms_transactions SET accountHint = :targetName WHERE accountHint = :sourceName")
     suspend fun updateAccountName(sourceName: String, targetName: String)
 
+    @Query("UPDATE sms_transactions SET category = :targetName WHERE category = :sourceName")
+    suspend fun updateCategoryName(sourceName: String, targetName: String)
+
     @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId")
     fun getLinkedCredits(debitId: Int): Flow<List<SmsTransactionEntity>>
 
@@ -68,4 +71,17 @@ interface SmsTransactionDao {
 
     @Query("SELECT * FROM sms_transactions WHERE type = 'DEBIT' AND transactionTime <= :maxTime ORDER BY transactionTime DESC")
     fun getAvailableDebits(maxTime: Long): Flow<List<SmsTransactionEntity>>
+
+    @Query("SELECT category FROM sms_transactions WHERE merchant = :merchant COLLATE NOCASE AND category != '' ORDER BY transactionTime DESC LIMIT 1")
+    suspend fun getLastCategoryForMerchant(merchant: String): String?
+
+    @Query("""
+        SELECT category FROM sms_transactions 
+        WHERE (:merchant LIKE merchant || '%' OR merchant LIKE :merchant || '%') 
+        AND category != '' 
+        AND LENGTH(merchant) >= 3 
+        AND LENGTH(:merchant) >= 3
+        ORDER BY transactionTime DESC LIMIT 1
+    """)
+    suspend fun getLastCategoryForMerchantFuzzy(merchant: String): String?
 }

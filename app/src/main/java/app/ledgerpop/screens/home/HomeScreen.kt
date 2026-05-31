@@ -1,15 +1,25 @@
 package app.ledgerpop.screens.home
 
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -18,9 +28,33 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,34 +62,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionSheet
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
-import app.ledgerpop.ui.viewmodel.HomeViewModel
-import app.ledgerpop.ui.viewmodel.CategoryAggregate
 import app.ledgerpop.ui.theme.Purple700
+import app.ledgerpop.ui.viewmodel.CategoryAggregate
+import app.ledgerpop.ui.viewmodel.HomeViewModel
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.ui.platform.LocalLocale
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.HazeDefaults
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.foundation.BorderStroke
 
 @Composable
 fun HomeScreen(
@@ -95,7 +127,7 @@ fun HomeScreen(
         ) {
             // ── Header
             item {
-                HomeHeader()
+                HomeHeader(uiState.userName)
             }
 
             // ── Balance Card
@@ -113,7 +145,14 @@ fun HomeScreen(
                     onUpdateBudget = { viewModel.updateBudget(it) }
                 )
             }
-
+            // ── Comparison
+            item {
+                MonthCompareCard(
+                    thisMonth = uiState.thisMonthExpense,
+                    lastMonth = uiState.lastMonthExpense
+                )
+                Spacer(Modifier.height(24.dp))
+            }
             // ── Insights Row (Horizontal)
             if (uiState.insights.isNotEmpty()) {
                 item {
@@ -124,7 +163,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(uiState.insights) { insight ->
-                            InsightCard(insight.icon, insight.message)
+                            InsightCard(insight.icon, insight.title, insight.message)
                         }
                     }
                     Spacer(Modifier.height(24.dp))
@@ -134,7 +173,7 @@ fun HomeScreen(
             // ── Top Categories
             if (uiState.topCategories.isNotEmpty()) {
                 item {
-                    SectionHeader(title = "Spending by Category", action = null)
+                    SectionHeader(title = "Top Spending Categories", action = null)
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 20.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -151,19 +190,11 @@ fun HomeScreen(
                 }
             }
 
-            // ── Comparison
-            item {
-                MonthCompareCard(
-                    thisMonth = uiState.thisMonthExpense,
-                    lastMonth = uiState.lastMonthExpense
-                )
-                Spacer(Modifier.height(24.dp))
-            }
 
-            // ── Recent / Highest Transactions
+            // ── Recent / Top Transactions
             item {
                 SectionHeader(
-                    title = "Highest Transactions",
+                    title = "Top Transactions",
                     action = "View All",
                     onActionClick = onNavigateToTransactions
                 )
@@ -258,7 +289,11 @@ fun HomeScreen(
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 @Composable
-private fun HomeHeader() {
+private fun HomeHeader(userName: String) {
+    val currentMonthYear = remember {
+        SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(Date())
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -268,29 +303,16 @@ private fun HomeHeader() {
     ) {
         Column {
             Text(
-                text = greeting(),
+                text = greeting(userName),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Monthly Overview",
+                text = "Monthly Overview, $currentMonthYear",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
-        }
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Rounded.Person,
-                    contentDescription = "Profile",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
@@ -323,31 +345,49 @@ private fun SectionHeader(
 }
 
 @Composable
-private fun InsightCard(emoji: String, message: String) {
+private fun InsightCard(emoji: String, title: String, message: String) {
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
         modifier = Modifier
-            .width(200.dp)
-            .height(100.dp)
+            .width(220.dp)
+            .height(90.dp),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(emoji, fontSize = 24.sp)
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 16.sp
-            )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(emoji, fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(verticalArrangement = Arrangement.Center) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 14.sp
+                )
+            }
         }
     }
 }
@@ -358,42 +398,53 @@ private fun CategoryCompactCard(
     customCategories: List<CustomCategoryEntity>
 ) {
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        modifier = Modifier.width(140.dp)
+        modifier = Modifier
+            .width(130.dp)
+            .height(130.dp),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Large background icon/emoji
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = CategoryEngine.emoji(aggregate.category, customCategories),
-                    style = MaterialTheme.typography.titleMedium
+                    fontSize = 60.sp,
+                    modifier = Modifier.alpha(0.25f)
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = aggregate.category,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "₹${formatAmount(aggregate.amount)}",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+
+            // Text Overlay
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                Text(
+                    text = aggregate.category.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "₹${formatAmount(aggregate.amount)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
@@ -409,8 +460,9 @@ private fun BalanceRingCard(
     var started by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { started = true }
 
-    val spendRatio = if (monthlyBudget > 0) (totalExpense / monthlyBudget).toFloat() else 0f
-    
+    val effectiveBudget = if (monthlyBudget > 0) monthlyBudget else totalIncome
+    val spendRatio = if (effectiveBudget > 0) (totalExpense / effectiveBudget).toFloat() else 0f
+
     val animatedSweep by animateFloatAsState(
         targetValue = if (started) (spendRatio * 360f) else 0f,
         animationSpec = tween(1200),
@@ -453,9 +505,9 @@ private fun BalanceRingCard(
 
                             // 1. Background Track (Dynamic White/Black)
                             drawArc(
-                                color = if (surfaceColor.luminance() < 0.5f) 
-                                    Color.White.copy(alpha = 0.08f) 
-                                else 
+                                color = if (surfaceColor.luminance() < 0.5f)
+                                    Color.White.copy(alpha = 0.08f)
+                                else
                                     Color.Black.copy(alpha = 0.08f),
                                 startAngle = 0f,
                                 sweepAngle = 360f,
@@ -464,7 +516,7 @@ private fun BalanceRingCard(
                                 size = arcSize,
                                 style = Stroke(strokeWidth)
                             )
-                            
+
                             // 2. Spend Progress
                             if (animatedSweep <= 360f) {
                                 // Within budget: Purple arc
@@ -505,11 +557,11 @@ private fun BalanceRingCard(
                             val radius = (size.width - strokeWidth) / 2
 
                             // Budget Pointer (100% Mark at the Top)
-                            if (monthlyBudget > 0) {
+                            if (effectiveBudget > 0) {
                                 val budgetAngleRad = Math.toRadians(startAngle.toDouble())
                                 val bx = centerX + radius * Math.cos(budgetAngleRad).toFloat()
                                 val by = centerY + radius * Math.sin(budgetAngleRad).toFloat()
-                                
+
                                 // Vertical-ish notch for budget
                                 drawCircle(
                                     color = Color.Black,
@@ -523,7 +575,7 @@ private fun BalanceRingCard(
                                 val currentAngleRad = Math.toRadians((startAngle + animatedSweep).toDouble())
                                 val sx = centerX + radius * Math.cos(currentAngleRad).toFloat()
                                 val sy = centerY + radius * Math.sin(currentAngleRad).toFloat()
-                                
+
                                 drawCircle(
                                     color = Color.White,
                                     radius = 6.dp.toPx(),
@@ -588,7 +640,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    
+
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             "Monthly Budget",
@@ -703,7 +755,7 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
                     )
                 }
             }
-            
+
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     "₹${formatAmount(lastMonth)}",
@@ -773,7 +825,7 @@ private fun HomeTransactionRow(
             Text(
                 text = txn.merchant.ifBlank { txn.sender },
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -789,7 +841,7 @@ private fun HomeTransactionRow(
             Text(
                 text = "${if (txn.amount < 0) "−" else ""}₹${"%,.0f".format(kotlin.math.abs(txn.amount))}",
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Black,
+                fontWeight = FontWeight.Normal,
                 color = if (isBillable) amountColor
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -831,13 +883,14 @@ private fun EmptyTransactionsPlaceholder() {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-private fun greeting(): String {
+private fun greeting(userName: String): String {
     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-    return when {
-        hour < 12 -> "Good morning 👋"
-        hour < 17 -> "Good afternoon 👋"
-        else      -> "Good evening 👋"
+    val base = when {
+        hour < 12 -> "Good morning"
+        hour < 17 -> "Good afternoon"
+        else      -> "Good evening"
     }
+    return "$base, $userName 👋"
 }
 
 private fun formatAmount(amount: Double): String {
@@ -848,6 +901,7 @@ private fun formatAmount(amount: Double): String {
         else              -> "%,.0f".format(absAmt)
     }
 }
+
 
 // ── Quick Category Update Dialog ───────────────────────────────────────────────
 

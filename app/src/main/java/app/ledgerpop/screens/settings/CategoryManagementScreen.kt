@@ -15,18 +15,23 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.category.CategoryEngine
-import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+private data class CategoryDisplayInfo(
+    val name: String,
+    val emoji: String,
+    val type: String,
+    val isStandard: Boolean,
+    val id: Int? = null
+)
+
 @Composable
 fun CategoryManagementScreen(
     onBack: () -> Unit
@@ -36,112 +41,126 @@ fun CategoryManagementScreen(
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(db, context))
     val uiState by viewModel.uiState.collectAsState()
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingCategory by remember { mutableStateOf<CustomCategoryEntity?>(null) }
-    var editingStandardCategory by remember { mutableStateOf<Pair<String, String>?>(null) } // Name, Type
+    val standardDebit = listOf(
+        CategoryEngine.FOOD, CategoryEngine.GROCERIES, CategoryEngine.SHOPPING,
+        CategoryEngine.TRAVEL, CategoryEngine.FUEL, CategoryEngine.BILLS,
+        CategoryEngine.HEALTH, CategoryEngine.INSURANCE, CategoryEngine.INVESTMENTS,
+        CategoryEngine.ENTERTAINMENT, CategoryEngine.EMI, CategoryEngine.TRANSFER,
+        CategoryEngine.OTHER
+    )
+    val standardCredit = listOf(
+        CategoryEngine.SALARY, CategoryEngine.INTEREST, CategoryEngine.DIVIDEND,
+        CategoryEngine.REFUND
+    )
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Categories", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(Icons.Rounded.Add, contentDescription = "Add Category")
-                    }
-                }
-            )
+    val customMap = uiState.customCategories.associateBy { it.name }
+    
+    val allCategoryInfo = remember(uiState.customCategories) {
+        val list = mutableListOf<CategoryDisplayInfo>()
+        // Standard
+        (standardDebit + standardCredit).forEach { name ->
+            val custom = customMap[name]
+            val defaultType = if (name in standardCredit) "CREDIT" else "DEBIT"
+            list.add(CategoryDisplayInfo(
+                name = name,
+                emoji = custom?.emoji ?: CategoryEngine.emoji(name),
+                type = custom?.type ?: defaultType,
+                isStandard = true,
+                id = custom?.id
+            ))
         }
-    ) { padding ->
-        LazyColumn(
+        // Truly custom
+        uiState.customCategories.filter { it.name !in standardDebit && it.name !in standardCredit }.forEach { cat ->
+            list.add(CategoryDisplayInfo(
+                name = cat.name,
+                emoji = cat.emoji,
+                type = cat.type,
+                isStandard = false,
+                id = cat.id
+            ))
+        }
+        list
+    }
+
+    val debitCategories = allCategoryInfo.filter { it.type == "DEBIT" }
+    val creditCategories = allCategoryInfo.filter { it.type == "CREDIT" }
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingCategory by remember { mutableStateOf<CategoryDisplayInfo?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background),
-            contentPadding = PaddingValues(16.dp),
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                "Categories",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            IconButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Rounded.Add, contentDescription = "Add Category")
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
-                Text(
-                    "Standard Categories",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-
-            val standardDebit = listOf(
-                CategoryEngine.FOOD, CategoryEngine.GROCERIES, CategoryEngine.SHOPPING,
-                CategoryEngine.TRAVEL, CategoryEngine.FUEL, CategoryEngine.BILLS,
-                CategoryEngine.HEALTH, CategoryEngine.INSURANCE, CategoryEngine.INVESTMENTS,
-                CategoryEngine.ENTERTAINMENT, CategoryEngine.EMI, CategoryEngine.TRANSFER,
-                CategoryEngine.OTHER
-            )
-            
-            items(standardDebit) { name ->
-                val custom = uiState.customCategories.find { it.name == name }
-                CategoryRow(
-                    name = name,
-                    emoji = custom?.emoji ?: CategoryEngine.emoji(name),
-                    type = "DEBIT",
-                    isStandard = true,
-                    onEditEmoji = { editingStandardCategory = name to "DEBIT" }
-                )
-            }
-
-            item {
-                Text(
-                    "Standard Credit Categories",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                )
-            }
-
-            val standardCredit = listOf(
-                CategoryEngine.SALARY, CategoryEngine.INTEREST, CategoryEngine.DIVIDEND,
-                CategoryEngine.REFUND
-            )
-
-            items(standardCredit) { name ->
-                val custom = uiState.customCategories.find { it.name == name }
-                CategoryRow(
-                    name = name,
-                    emoji = custom?.emoji ?: CategoryEngine.emoji(name),
-                    type = "CREDIT",
-                    isStandard = true,
-                    onEditEmoji = { editingStandardCategory = name to "CREDIT" }
-                )
-            }
-
-            val trulyCustom = uiState.customCategories.filter { cat ->
-                val isStandardDebit = standardDebit.any { it.equals(cat.name, ignoreCase = true) }
-                val isStandardCredit = standardCredit.any { it.equals(cat.name, ignoreCase = true) }
-                !isStandardDebit && !isStandardCredit
-            }
-
-            if (trulyCustom.isNotEmpty()) {
+            if (debitCategories.isNotEmpty()) {
                 item {
                     Text(
-                        "Your Categories",
+                        "Debit Categories",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                items(debitCategories) { cat ->
+                    CategoryRow(
+                        name = cat.name,
+                        emoji = cat.emoji,
+                        type = cat.type,
+                        isStandard = cat.isStandard,
+                        onEdit = { editingCategory = cat },
+                        onDelete = if (!cat.isStandard && cat.id != null) {
+                            { viewModel.deleteCategory(cat.id) }
+                        } else null
+                    )
+                }
+            }
+
+            if (creditCategories.isNotEmpty()) {
+                item {
+                    Text(
+                        "Credit Categories",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                     )
                 }
-
-                items(trulyCustom) { cat ->
+                items(creditCategories) { cat ->
                     CategoryRow(
                         name = cat.name,
                         emoji = cat.emoji,
                         type = cat.type,
-                        isStandard = false,
-                        onEditEmoji = { editingCategory = cat },
-                        onDelete = { viewModel.deleteCategory(cat.id) }
+                        isStandard = cat.isStandard,
+                        onEdit = { editingCategory = cat },
+                        onDelete = if (!cat.isStandard && cat.id != null) {
+                            { viewModel.deleteCategory(cat.id) }
+                        } else null
                     )
                 }
             }
@@ -159,26 +178,14 @@ fun CategoryManagementScreen(
     }
 
     editingCategory?.let { cat ->
-        EmojiEditDialog(
+        EditCategoryDialog(
             currentName = cat.name,
             currentEmoji = cat.emoji,
+            currentType = cat.type,
             onDismiss = { editingCategory = null },
-            onSave = { newEmoji ->
-                viewModel.updateCategoryEmoji(cat.name, newEmoji, cat.type)
+            onSave = { newName, newEmoji, newType ->
+                viewModel.updateCategory(cat.id, cat.name, newName, newEmoji, newType)
                 editingCategory = null
-            }
-        )
-    }
-
-    editingStandardCategory?.let { (name, type) ->
-        val custom = uiState.customCategories.find { it.name == name }
-        EmojiEditDialog(
-            currentName = name,
-            currentEmoji = custom?.emoji ?: CategoryEngine.emoji(name),
-            onDismiss = { editingStandardCategory = null },
-            onSave = { newEmoji ->
-                viewModel.updateCategoryEmoji(name, newEmoji, type)
-                editingStandardCategory = null
             }
         )
     }
@@ -190,7 +197,7 @@ fun CategoryRow(
     emoji: String,
     type: String,
     isStandard: Boolean,
-    onEditEmoji: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
     Surface(
@@ -208,7 +215,7 @@ fun CategoryRow(
                 modifier = Modifier
                     .size(40.dp)
                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
-                    .clickable { onEditEmoji() },
+                    .clickable { onEdit() },
                 contentAlignment = Alignment.Center
             ) {
                 Text(emoji, fontSize = 20.sp)
@@ -217,12 +224,30 @@ fun CategoryRow(
             Spacer(Modifier.width(12.dp))
             
             Column(Modifier.weight(1f)) {
-                Text(name, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, fontWeight = FontWeight.SemiBold)
+                    if (!isStandard) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "CUSTOM",
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
                 Text(type, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            IconButton(onClick = onEditEmoji) {
-                Icon(Icons.Rounded.Edit, contentDescription = "Edit Emoji", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Rounded.Edit, contentDescription = "Edit", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
             }
 
             if (!isStandard && onDelete != null) {
@@ -283,28 +308,47 @@ fun AddCategoryDialog(
 }
 
 @Composable
-fun EmojiEditDialog(
+fun EditCategoryDialog(
     currentName: String,
     currentEmoji: String,
+    currentType: String,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit
+    onSave: (String, String, String) -> Unit
 ) {
+    var name by remember { mutableStateOf(currentName) }
     var emoji by remember { mutableStateOf(currentEmoji) }
+    var type by remember { mutableStateOf(currentType) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Emoji for $currentName") },
+        title = { Text("Edit Category") },
         text = {
-            OutlinedTextField(
-                value = emoji,
-                onValueChange = { emoji = it },
-                label = { Text("Emoji") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Category Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = emoji,
+                    onValueChange = { emoji = it },
+                    label = { Text("Emoji") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = type == "DEBIT", onClick = { type = "DEBIT" })
+                    Text("Debit")
+                    Spacer(Modifier.width(16.dp))
+                    RadioButton(selected = type == "CREDIT", onClick = { type = "CREDIT" })
+                    Text("Credit")
+                }
+            }
         },
         confirmButton = {
-            Button(onClick = { onSave(emoji) }) {
+            Button(onClick = { if (name.isNotBlank()) onSave(name, emoji, type) }) {
                 Text("Save")
             }
         },

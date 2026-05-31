@@ -79,6 +79,42 @@ fun AddTransactionSheet(
     var isBillable by remember { mutableStateOf(true) }
     var amountError by remember { mutableStateOf(false) }
 
+    // Lookback logic: Auto-fill category when merchant is entered (constant live search)
+    LaunchedEffect(merchant) {
+        val trimmed = merchant.trim()
+        if (trimmed.length >= 3) {
+            val normalized = CategoryEngine.normalizeMerchant(trimmed)
+            
+            val historicalCategory = db.smsTransactionDao().getLastCategoryForMerchant(normalized)
+                ?: db.smsTransactionDao().getLastCategoryForMerchant(trimmed)
+                ?: db.smsTransactionDao().getLastCategoryForMerchantFuzzy(normalized)
+                ?: db.smsTransactionDao().getLastCategoryForMerchantFuzzy(trimmed)
+
+            if (historicalCategory != null) {
+                category = historicalCategory
+            } else {
+                // If no history, try real-time engine categorization
+                val engineCat = CategoryEngine.categorize(trimmed, "", "")
+                if (engineCat != "Other") {
+                    category = engineCat
+                }
+            }
+        } else if (trimmed.isEmpty()) {
+            // Reset to initial if name is erased
+            category = ""
+        }
+    }
+
+    // Account mapping logic: Auto-resolve merged accounts
+    LaunchedEffect(accountHint) {
+        if (accountHint.isNotBlank()) {
+            val resolved = db.accountAliasDao().getTargetName(accountHint.trim())
+            if (resolved != null && resolved != accountHint) {
+                accountHint = resolved
+            }
+        }
+    }
+
     // Date & Time State
     var selectedDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }

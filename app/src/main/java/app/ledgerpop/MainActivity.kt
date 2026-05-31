@@ -1,5 +1,6 @@
 package app.ledgerpop
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,10 +18,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Receipt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,9 +35,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.screens.analytics.AnalyticsScreen
 import app.ledgerpop.screens.home.HomeScreen
+import app.ledgerpop.screens.onboarding.OnboardingScreen
 import app.ledgerpop.screens.settings.AccountManagementScreen
 import app.ledgerpop.screens.settings.CategoryManagementScreen
 import app.ledgerpop.screens.settings.PermissionsScreen
@@ -51,19 +54,22 @@ import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object Transactions : Screen("transactions")
+    object Transactions : Screen("transactions?id={id}") {
+        fun createRoute(id: Int? = null) = if (id != null) "transactions?id=$id" else "transactions"
+    }
     object Analytics : Screen("analytics")
     object Settings : Screen("settings")
     object SmsAudit : Screen("sms_audit")
     object Permissions : Screen("permissions")
     object Categories : Screen("categories")
     object Accounts : Screen("accounts")
+    object Onboarding : Screen("onboarding")
 }
 
 data class BottomNavItem(
     val screen: Screen,
     val label: String,
-    val icon: ImageVector
+    val icon: ImageVector,
 )
 
 val bottomNavItems = listOf(
@@ -73,7 +79,17 @@ val bottomNavItems = listOf(
     BottomNavItem(Screen.Settings, "Settings", Icons.Rounded.Settings)
 )
 
+fun isBottomNavItem(route: String?): Boolean {
+    if (route == null) return false
+    return bottomNavItems.any { item ->
+        val baseRoute = item.screen.route.split("?").first()
+        route.startsWith(baseRoute)
+    }
+}
+
 class MainActivity : ComponentActivity() {
+    private var pendingTransactionId by mutableStateOf<Int?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPrefs = getSharedPreferences("ledgerpop_prefs", MODE_PRIVATE)
         when (sharedPrefs.getString("app_theme", "AUTO")) {
@@ -84,26 +100,56 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        handleIntent(intent)
+
         setContent {
             val db = LedgerPopDatabase.getInstance(this)
             val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(db, this))
             val uiState by settingsViewModel.uiState.collectAsState()
 
             LedgerPopTheme(appTheme = uiState.appTheme) {
-                LedgerPopApp()
+                LedgerPopApp(settingsViewModel, pendingTransactionId) {
+                    pendingTransactionId = null
+                }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val id = intent?.getIntExtra("transaction_id", -1) ?: -1
+        if (id != -1) {
+            pendingTransactionId = id
         }
     }
 }
 
 @Composable
-fun LedgerPopApp() {
+fun LedgerPopApp(
+    settingsViewModel: SettingsViewModel,
+    pendingTransactionId: Int? = null,
+    onTransactionHandled: () -> Unit = {}
+) {
+    val uiState by settingsViewModel.uiState.collectAsState()
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val hazeState = remember { HazeState() }
 
-    val showBottomBar = currentRoute in bottomNavItems.map { it.screen.route }
+    LaunchedEffect(pendingTransactionId) {
+        if (pendingTransactionId != null) {
+            navController.navigate(Screen.Transactions.createRoute(pendingTransactionId))
+            onTransactionHandled()
+        }
+    }
+
+    val showBottomBar = isBottomNavItem(currentRoute)
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -118,8 +164,17 @@ fun LedgerPopApp() {
             ) {
                 NavHost(
                     navController = navController,
-                    startDestination = Screen.Home.route
+                    startDestination = if (uiState.isFirstRun) Screen.Onboarding.route else Screen.Home.route
                 ) {
+                    composable(Screen.Onboarding.route) {
+                        OnboardingScreen {
+                            settingsViewModel.setFirstRunComplete()
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Onboarding.route) { inclusive = true }
+                            }
+                        }
+                    }
+
                     composable(Screen.Home.route) {
                         HomeScreen(
                             onNavigateToTransactions = {
@@ -134,8 +189,15 @@ fun LedgerPopApp() {
                         )
                     }
 
-                    composable(Screen.Transactions.route) {
-                        TransactionsScreen()
+                    composable(
+                        route = Screen.Transactions.route,
+                        arguments = listOf(navArgument("id") {
+                            type = NavType.IntType
+                            defaultValue = -1
+                        })
+                    ) { backStackEntry ->
+                        val transactionId = backStackEntry.arguments?.getInt("id") ?: -1
+                        TransactionsScreen(initialTransactionId = if (transactionId != -1) transactionId else null)
                     }
 
                     composable(Screen.Analytics.route) {

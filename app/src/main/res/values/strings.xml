@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">LedgerPop</string>
+    <string name="notification_expense_logged">Expense Logged</string>
+    <string name="notification_default_category">🏦 Bank Transfer</string>
+    <string name="notification_default_amount">₹ 1</string>
+    <string name="notification_bullet_separator"> • </string>
+    <string name="notification_default_merchant">Merchant Name</string>
+    <string name="notification_default_time">12:42 pm, 31 December</string>
+    <string name="notification_emoji_cross">❌</string>
+    <string name="notification_exclude_analytics">Exclude from Analytics</string>
 </resources>

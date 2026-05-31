@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +65,7 @@ fun SmsAuditScreen(onBack: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
+                .padding(start = 4.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
@@ -76,7 +77,7 @@ fun SmsAuditScreen(onBack: () -> Unit) {
             }
             Text(
                 "SMS Audit Log",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
@@ -274,7 +275,8 @@ private fun AuditEntryCard(
         else           -> Icons.AutoMirrored.Rounded.Help
     }
 
-    val sdf = SimpleDateFormat("d MMM yy, h:mm a", Locale.getDefault())
+    val locale = LocalConfiguration.current.locales[0]
+    val sdf = remember(locale) { SimpleDateFormat("d MMM yy, h:mm a", locale) }
     val isReported = entry.reportType.isNotBlank()
 
     Card(
@@ -363,7 +365,7 @@ private fun AuditEntryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${entry.parsedType} ₹${"%,.0f".format(entry.parsedAmount)}",
+                        text = "${entry.parsedType} ₹${String.format(locale, "%,.0f", entry.parsedAmount)}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
                         color = if (entry.parsedType == "CREDIT")

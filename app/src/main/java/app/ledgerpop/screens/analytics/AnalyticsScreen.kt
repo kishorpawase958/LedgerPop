@@ -1,10 +1,10 @@
 package app.ledgerpop.screens.analytics
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -30,9 +30,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.ledgerpop.ui.components.ScrollableBarChart
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.theme.Purple500
 import app.ledgerpop.data.category.CategoryEngine
@@ -48,7 +50,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import kotlin.math.atan2
 
-private val CHART_COLORS = listOf(
+private val SPENDS_COLORS = listOf(
+    Purple700,
+    Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF43F5E),
+    Color(0xFFF97316), Color(0xFFEAB308), Color(0xFF22C55E), Color(0xFF06B6D4),
+    Color(0xFF4A5E7E), Color(0xFF775843), Color(0xFFBDB18F), Color(0xFF80D1DC),
+    Color(0xFF7E3603), Color(0xFF3B2E05), Color(0xFF1E5633), Color(0xFF0C3138),
+    Color(0xFFF89ABA), Color(0xFFFDB39B), Color(0xFFAFC595), Color(0xFFCFB6D3),
+    Color(0xFF887567), Color(0xFF65635B), Color(0xFF81AF95), Color(0xFF7DBDCC),
+)
+
+private val INCOME_COLORS = listOf(
     Purple700,
     Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF43F5E),
     Color(0xFFF97316), Color(0xFFEAB308), Color(0xFF22C55E), Color(0xFF06B6D4),
@@ -77,6 +89,7 @@ fun AnalyticsScreen() {
 
     val showFiltersState = remember { mutableStateOf(false) }
     val showDatePickerState = remember { mutableStateOf(false) }
+    val isBreakdownExpanded = remember { mutableStateOf(false) }
 
     if (uiState.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -225,7 +238,7 @@ fun AnalyticsScreen() {
                                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                uiState.availableAccounts.forEach { acc ->
+                                uiState.availableAccounts.drop(1).forEach { acc ->
                                     val isSelected = uiState.selectedAccount == acc
                                     FilterChip(
                                         selected = isSelected,
@@ -233,12 +246,49 @@ fun AnalyticsScreen() {
                                         label = { Text(acc) },
                                         shape = RoundedCornerShape(12.dp),
                                         colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                             containerColor = MaterialTheme.colorScheme.surface,
                                             labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                                         ),
-                                        border = null
+                                        border = null,
+                                        leadingIcon = if (isSelected) {
+                                            { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                                        } else null
+                                    )
+                                }
+                            }
+                        }
+
+                        // Category Selector
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Category",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                uiState.availableCategories.drop(1).forEach { cat ->
+                                    val isSelected = uiState.selectedCategory == cat
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setCategoryFilter(cat) },
+                                        label = { Text(cat) },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            containerColor = MaterialTheme.colorScheme.surface,
+                                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        border = null,
+                                        leadingIcon = if (isSelected) {
+                                            { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                                        } else null
                                     )
                                 }
                             }
@@ -270,7 +320,7 @@ fun AnalyticsScreen() {
                     KpiCard(
                         label = "Expenses",
                         value = expenseText,
-                        color = MaterialTheme.colorScheme.error,
+                        color = Purple500,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.openDrillDown(DrillDownType.Expense) }
                     )
@@ -282,55 +332,124 @@ fun AnalyticsScreen() {
                 val netText = remember(uiState.net, locale) {
                     "${if (uiState.net < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.net))}"
                 }
+                val netColor = when {
+                    uiState.net > 0 -> Color(0xFF00B894)
+                    uiState.net < 0 -> MaterialTheme.colorScheme.error
+                    else -> Color.White
+                }
                 val avgDebitText = remember(uiState.avgDebit, locale) {
                     "${if (uiState.avgDebit < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.avgDebit))}"
+                }
+                val avgCreditText = remember(uiState.avgCredit, locale) {
+                    "${if (uiState.avgCredit < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.avgCredit))}"
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    KpiCard("Net", netText, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                    KpiCard("Avg Debit", avgDebitText, Purple500, Modifier.weight(1f))
+                    KpiCard("Net", netText, netColor, Modifier.weight(1f))
+                    KpiCard("Avg Credit", avgCreditText, Color(0xFF00B894), Modifier.weight(1f))
+                    KpiCard("Avg Debit", avgDebitText, color = Purple500, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(24.dp))
             }
 
-            // ── View Type Selector (Spends vs Income) ────────────────────────
-            item {
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
-                ) {
-                    SegmentedButton(
-                        selected = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
-                        onClick = { viewModel.setViewType(app.ledgerpop.ui.state.AnalyticsViewType.SPENDS) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                    ) { Text("Spends") }
-                    SegmentedButton(
-                        selected = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME,
-                        onClick = { viewModel.setViewType(app.ledgerpop.ui.state.AnalyticsViewType.INCOME) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                    ) { Text("Income") }
+            // ── Monthly Trend Chart ───────────────────────────────────────────
+            if (uiState.trendSummaries.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Monthly Trend",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)
+                    )
+                    ScrollableBarChart(
+                        summaries = uiState.trendSummaries,
+                        selectedMonth = uiState.selectedMonth,
+                        onBarClick = { viewModel.onMonthToggle(it) }
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+
+            // ── Category Distribution Header & Switch ───────────────────────
+            if (uiState.totalIncome > 0 || uiState.totalExpense > 0) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal =30.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
+                                "Spending Distribution"
+                            else
+                                "Income Distribution",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        val isIncome = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME
+                        val themeColor by animateColorAsState(
+                            if (isIncome) Color(0xFF00B894) else Purple700,
+                            label = "ThemeColor"
+                        )
+                        val switchBgColor by animateColorAsState(
+                            themeColor.copy(alpha = 0.08f),
+                            label = "SwitchBg"
+                        )
+                        val thumbOffset by animateDpAsState(
+                            if (isIncome) 52.dp else 0.dp,
+                            label = "ThumbOffset"
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .width(112.dp)
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(switchBgColor)
+                                .border(1.dp, themeColor.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                                .clickable {
+                                    viewModel.setViewType(
+                                        if (isIncome) app.ledgerpop.ui.state.AnalyticsViewType.SPENDS
+                                        else app.ledgerpop.ui.state.AnalyticsViewType.INCOME
+                                    )
+                                }
+                                .padding(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .offset { IntOffset(x = thumbOffset.roundToPx(), y = 0) }
+                                    .fillMaxHeight()
+                                    .width(52.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(themeColor),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isIncome) "Income" else "Spends",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
             // ── Category Donut Chart ──────────────────────────────────────────
             if (uiState.categoryBreakdown.isNotEmpty()) {
                 item {
-                    Text(
-                        text = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
-                            "Spending Distribution"
-                        else
-                            "Income Distribution",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
                     CategoryDonutChart(
                         summaries = uiState.categoryBreakdown,
                         customCategories = uiState.customCategories,
+                        viewType = uiState.viewType,
                         onCategoryClick = { cat -> viewModel.openDrillDown(DrillDownType.Category(cat)) }
                     )
                     Spacer(Modifier.height(16.dp))
@@ -353,8 +472,11 @@ fun AnalyticsScreen() {
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                     )
                 }
+
+                val breakdownItems = if (isBreakdownExpanded.value) uiState.categoryBreakdown else uiState.categoryBreakdown.take(7)
+
                 items(
-                    items = uiState.categoryBreakdown,
+                    items = breakdownItems,
                     key = { it.category }
                 ) { summary ->
                     CategoryRow(
@@ -364,6 +486,23 @@ fun AnalyticsScreen() {
                         onClick = { viewModel.openDrillDown(DrillDownType.Category(summary.category)) }
                     )
                     Spacer(Modifier.height(8.dp))
+                }
+
+                if (uiState.categoryBreakdown.size > 7) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(onClick = { isBreakdownExpanded.value = !isBreakdownExpanded.value }) {
+                                Icon(
+                                    if (isBreakdownExpanded.value) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -516,13 +655,27 @@ fun AnalyticsScreen() {
             onDismissRequest = { showDatePickerState.value = false },
             colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.setDateRange(
-                        start = dateRangePickerState.selectedStartDateMillis,
-                        end = dateRangePickerState.selectedEndDateMillis
-                    )
-                    showDatePickerState.value = false
-                }) { Text("Apply") }
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (uiState.startDateMillis != null) {
+                        TextButton(
+                            onClick = {
+                                viewModel.setDateRange(null, null)
+                                showDatePickerState.value = false
+                            },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Clear") }
+                    }
+                    TextButton(onClick = {
+                        viewModel.setDateRange(
+                            start = dateRangePickerState.selectedStartDateMillis,
+                            end = dateRangePickerState.selectedEndDateMillis
+                        )
+                        showDatePickerState.value = false
+                    }) { Text("Apply") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showDatePickerState.value = false }) { Text("Cancel") }
@@ -551,6 +704,7 @@ fun AnalyticsScreen() {
 private fun CategoryDonutChart(
     summaries: List<CategorySummary>,
     customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity>,
+    viewType: app.ledgerpop.ui.state.AnalyticsViewType = app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
     onCategoryClick: (String) -> Unit
 ) {
     if (summaries.isEmpty()) return
@@ -558,6 +712,7 @@ private fun CategoryDonutChart(
     val locale = LocalConfiguration.current.locales[0]
     var expanded by remember { mutableStateOf(false) }
     val displaySummaries = if (expanded) summaries else summaries.take(7)
+    val colors = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME) INCOME_COLORS else SPENDS_COLORS
 
     Card(
         modifier = Modifier
@@ -603,7 +758,7 @@ private fun CategoryDonutChart(
                             summaries.forEachIndexed { index, summary ->
                                 val sweepAngle = (summary.percentage / 100f) * 360f
                                 drawArc(
-                                    color = CHART_COLORS[index % CHART_COLORS.size],
+                                    color = colors[index % colors.size],
                                     startAngle = startAngle,
                                     sweepAngle = sweepAngle,
                                     useCenter = false,
@@ -657,7 +812,7 @@ private fun CategoryDonutChart(
                                 Box(
                                     modifier = Modifier
                                         .size(8.dp)
-                                        .background(CHART_COLORS[index % CHART_COLORS.size], RoundedCornerShape(2.dp))
+                                        .background(colors[index % colors.size], RoundedCornerShape(2.dp))
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(

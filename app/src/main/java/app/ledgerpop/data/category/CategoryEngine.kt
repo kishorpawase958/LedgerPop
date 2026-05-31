@@ -41,12 +41,12 @@ object CategoryEngine {
             "catere", "canteen", "bakery", "juice", "chai", "tea", "food",
             "eatery", "dine", "lunch", "dinner", "breakfast", "biryani",
             "fassos", "box8", "freshmenu", "eatsure", "barbeque", "burger king",
-            "starbucks", "hungerbox", "eat"
+            "starbucks", "hungerbox", "eat", "eternal", "district dining"
         ),
         GROCERIES to listOf(
             "zepto", "blinkit", "grofers", "bigbasket", "dunzo", "instamart",
             "dmart", "reliance smart", "supermarket", "grocery", "star bazaar",
-            "nature's basket", "more retail"
+            "nature's basket", "more retail","jiomart"
         ),
         SHOPPING to listOf(
             "flipkart", "amazon", "myntra", "ajio", "meesho", "nykaa",
@@ -83,7 +83,7 @@ object CategoryEngine {
         INSURANCE to listOf(
             "insurance", "premium", "lic ", "policy", "bajaj allianz",
             "hdfc ergo", "icici lombard", "star health", "care health",
-            "sbi life", "max life"
+            "sbi life", "max life", "icici pru"
         ),
         INVESTMENTS to listOf(
             "zerodha", "groww", "upstox", "angel", "icicidirect", "hdfc sec",
@@ -91,14 +91,14 @@ object CategoryEngine {
             "sbimfd", "mutual fund", "mf ", "nse", "bse", "nsesms",
             "bseltd", "cdslev", "cdsltx", "demat", "equity", "sip",
             "portfolio", "ppfamf", "icicimf", "franklinmf", "dspimf",
-            "mirae", "tata mf", "stock", "shares", "trading"
+            "mirae", "tata mf", "stock", "shares", "trading", "wintwealth"
         ),
         ENTERTAINMENT to listOf(
             "pvr", "pvrvip", "inox", "inoxmo", "cinepolis", "cinpls",
             "bookmyshow", "movie", "cinema", "theatre", "concert",
             "netflix", "hotstar", "zee5", "sonyliv", "jiocinema",
             "spotify", "gaana", "wynk", "youtube premium", "gaming",
-            "steam", "gamengm", "playstation", "xbox"
+            "steam", "gamengm", "playstation", "xbox","districy"
         ),
         EMI to listOf(
             "emi", "loan", "loanemi", "home loan", "car loan", "personal loan",
@@ -190,6 +190,33 @@ object CategoryEngine {
             (cat == "OTHER" || cat.isBlank()) -> OTHER
             else -> category
         }
+    }
+
+    /**
+     * Cleans up merchant names by removing common noise characters like *, -, /, and numeric suffixes.
+     * e.g., "INFO*ZOMATO*1234" -> "ZOMATO"
+     *       "PAYTM*SWIGGY" -> "SWIGGY"
+     */
+    fun normalizeMerchant(merchant: String): String {
+        if (merchant.isBlank()) return ""
+        
+        var name = merchant.uppercase()
+            .replace(Regex("[^A-Z0-9 ]"), " ") // Replace non-alphanumeric with spaces
+            .replace(Regex("\\s+"), " ")      // Collapse multiple spaces
+            .trim()
+
+        // Remove common prefixes
+        val prefixes = listOf("INFO", "PURCHASE", "PAYTM", "UPI", "GOOGLEPAY", "GPAY", "PHNPE", "PHONEPE", "BILLPAY")
+        prefixes.forEach { pref ->
+            if (name.startsWith("$pref ")) {
+                name = name.removePrefix("$pref ").trim()
+            }
+        }
+        
+        // Remove trailing numbers (often transaction IDs)
+        name = name.replace(Regex("\\s+\\d+$"), "").trim()
+        
+        return if (name.length > 2) name else merchant.uppercase().trim()
     }
 
     fun debitCategories(customCategories: List<CustomCategory> = emptyList()): List<String> {

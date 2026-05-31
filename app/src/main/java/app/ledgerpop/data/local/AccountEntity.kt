@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class AccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
-    val icon: String = "🏦"
+    val icon: String = "🏦",
+    val type: String = "BANK" // "BANK", "CARD", "OTHER"
 )
