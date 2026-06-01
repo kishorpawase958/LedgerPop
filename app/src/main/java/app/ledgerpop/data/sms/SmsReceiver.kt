@@ -27,6 +27,8 @@ class SmsReceiver : BroadcastReceiver() {
         val db = LedgerPopDatabase.getInstance(context)
         val dao = db.smsTransactionDao()
         val auditDao = db.smsAuditDao()
+        val aliasDao = db.accountAliasDao()
+        val accountDao = db.accountDao()
 
         val pendingResult = goAsync()
 
@@ -48,7 +50,9 @@ class SmsReceiver : BroadcastReceiver() {
                         context = context,
                         smsReader = NoOpSmsReader(context),
                         dao = dao,
-                        auditDao = auditDao
+                        auditDao = auditDao,
+                        aliasDao = aliasDao,
+                        accountDao = accountDao
                     )
 
                     val entity = importer.importSingle(msg)

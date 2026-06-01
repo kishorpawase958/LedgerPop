@@ -365,60 +365,47 @@ class SettingsViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isClearing = true) }
             try {
-                // 1. Revoke all persisted URI permissions
-                appContext.contentResolver.persistedUriPermissions.forEach { permission ->
-                    try {
-                        appContext.contentResolver.releasePersistableUriPermission(
-                            permission.uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        )
-                    } catch (e: Exception) {
-                        // Ignore
-                    }
-                }
-
-                // 2. Revoke SMS permissions if supported (API 33+)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    try {
-                        val permissionsToRevoke = mutableListOf<String>()
-                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
-                            permissionsToRevoke.add(Manifest.permission.READ_SMS)
-                        }
-                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED) {
-                            permissionsToRevoke.add(Manifest.permission.RECEIVE_SMS)
-                        }
-                        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                            permissionsToRevoke.add(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                        if (permissionsToRevoke.isNotEmpty()) {
-                            appContext.revokeSelfPermissionsOnKill(permissionsToRevoke)
-                        }
-                    } catch (e: Exception) {
-                        // Ignore
-                    }
-                }
-
-                // 3. The nuclear option: Clear all application user data
-                // This will wipe the database, shared preferences, cache, and internal files.
-                // It will also kill the app process, ensuring a clean state on next launch.
-                val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                val success = am.clearApplicationUserData()
-                
-                if (!success) {
-                    // Fallback if the system call fails
+                // 1. Clear Database Tables
+                withContext(Dispatchers.IO) {
                     db.smsTransactionDao().deleteAll()
                     db.smsAuditDao().deleteAll()
                     db.customCategoryDao().deleteAll()
                     db.accountDao().deleteAll()
                     db.accountAliasDao().deleteAll()
-                    sharedPrefs.edit().clear().putBoolean("is_first_run", true).apply()
-                    
-                    _uiState.update { it.copy(
-                        isClearing = false, 
-                        lastImportMessage = "Partial clear successful. Some data may remain.",
-                        isFirstRun = true
-                    ) }
                 }
+
+                // 2. Reset Preferences but keep Theme, Name and First Run Status
+                val currentTheme = sharedPrefs.getString("app_theme", AppTheme.AUTO.name) ?: AppTheme.AUTO.name
+                val currentName = sharedPrefs.getString("user_name", "User") ?: "User"
+                sharedPrefs.edit {
+                    clear()
+                    putString("app_theme", currentTheme)
+                    putString("user_name", currentName)
+                    putBoolean("is_first_run", false)
+                }
+
+                // 3. Update UI state to defaults, but keep permissions and profile intact
+                _uiState.update { currentState ->
+                    SettingsUiState(
+                        appTheme = try { AppTheme.valueOf(currentTheme) } catch (_: Exception) { AppTheme.AUTO },
+                        userName = currentName,
+                        isAutoBackupEnabled = false,
+                        backupFrequency = "Daily",
+                        backupFolderUri = null,
+                        backupFolderName = null,
+                        isFirstRun = false,
+                        // Keep current permissions
+                        hasReadSmsPermission = currentState.hasReadSmsPermission,
+                        hasReceiveSmsPermission = currentState.hasReceiveSmsPermission,
+                        hasNotificationsPermission = currentState.hasNotificationsPermission,
+                        isClearing = false,
+                        lastImportMessage = "All data cleared successfully."
+                    )
+                }
+
+                // Reschedule backup (disabled)
+                backupScheduler.scheduleBackup(false, "Daily")
+
             } catch (e: Exception) {
                 _uiState.update { it.copy(isClearing = false, lastImportMessage = "Clear failed: ${e.message}") }
             }
@@ -579,10 +566,16 @@ class SettingsViewModel(
                     db.accountAliasDao().deleteAll()
                     for (i in 0 until aliasesArray.length()) {
                         val obj = aliasesArray.getJSONObject(i)
+                        val aliasName = obj.getString("alias")
+                        val targetName = obj.getString("targetAccountName")
+                        
                         db.accountAliasDao().insert(AccountAliasEntity(
-                            alias = obj.getString("alias"),
-                            targetAccountName = obj.getString("targetAccountName")
+                            alias = aliasName,
+                            targetAccountName = targetName
                         ))
+                        
+                        // Update existing transactions to use the target account name if they match the alias
+                        db.smsTransactionDao().updateAccountName(aliasName, targetName)
                     }
                 }
 
@@ -626,98 +619,170 @@ class SettingsViewModel(
 
     private suspend fun parseCsv(context: Context, uri: Uri): List<SmsTransactionEntity> {
         val transactions = mutableListOf<SmsTransactionEntity>()
-        val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
-        val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
-        val timeFormatterAlt = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
         
+        // Define multiple formatters for robustness
+        val datePatterns = listOf("yyyy-MM-dd", "yyyy-M-d", "dd-MM-yyyy", "d-M-yyyy", "dd/MM/yyyy", "MM/dd/yyyy")
+        val timePatterns = listOf("HH:mm:ss", "H:mm:ss", "h:mm:ss a", "h:mm a", "H:mm", "HH:mm")
+        
+        val dateFormatters = datePatterns.map { DateTimeFormatter.ofPattern(it) }
+        val timeFormatters = timePatterns.map { DateTimeFormatter.ofPattern(it, Locale.ENGLISH) }
+
         val existingAccounts = db.smsTransactionDao().getAllAccounts()
 
         context.contentResolver.openInputStream(uri)?.use { input ->
-            input.bufferedReader().use { reader ->
-                reader.readLine() // Skip header
-                var line = reader.readLine()
-                while (line != null) {
-                    if (line.isBlank()) {
-                        line = reader.readLine()
-                        continue
-                    }
-                    
-                    // Detect delimiter: tab or comma
-                    val parts = if (line.contains("\t")) {
-                        line.split("\t").map { it.trim().removeSurrounding("\"") }
-                    } else {
-                        parseCsvLine(line).map { it.trim().removeSurrounding("\"") }
-                    }
+            val content = input.bufferedReader().readText()
+            if (content.isBlank()) return@use
 
-                    if (parts.size >= 9) {
-                        try {
-                            val dateStr = parts[0]
-                            val timeStr = parts[1]
-                            val merchant = parts[2]
-                            // Handle commas in amounts like 1,000 or 104,104.75
-                            val amountStr = parts[3].replace(",", "")
-                            val amount = amountStr.toDoubleOrNull() ?: 0.0
-                            val typeStr = parts[4]
-                            val accountRaw = parts[5]
+            // Detect delimiter (comma or tab)
+            val delimiter = if (content.take(2000).count { it == '\t' } > content.take(2000).count { it == ',' }) '\t' else ','
+            
+            val rows = parseCsvContent(content, delimiter)
+            if (rows.isEmpty()) return@use
+
+            // Skip header if it contains "DATE"
+            val startIdx = if (rows[0].getOrNull(0)?.contains("DATE", ignoreCase = true) == true) 1 else 0
+
+            for (i in startIdx until rows.size) {
+                val parts = rows[i]
+                if (parts.size >= 7) {
+                    try {
+                        val dateStr = parts[0]
+                        val timeStr = parts[1]
+                        val merchant = parts[2]
+                        val amountStr = parts[3].replace(",", "").replace("$", "").trim()
+                        val amount = amountStr.toDoubleOrNull() ?: 0.0
+                        val typeStr = parts[4]
+                        val accountRaw = parts[5]
+                        
+                        val categoryRaw: String
+                        val isBillable: Boolean
+                        val note: String
+
+                        if (parts.size >= 9) {
+                            // Current 9 or 10 column format
                             val expenseStatus = parts[6]
                             val incomeStatus = parts[7]
-                            val categoryRaw = parts[8]
-                            val note = if (parts.size > 9) parts[9] else ""
+                            categoryRaw = parts[8]
+                            note = parts.getOrNull(9) ?: ""
                             
                             val isDr = typeStr.equals("DR", ignoreCase = true)
-                            val type = if (isDr) "DEBIT" else "CREDIT"
-                            
-                            val isBillable = if (isDr) {
-                                expenseStatus.equals("Yes", ignoreCase = true)
+                            isBillable = if (isDr) {
+                                expenseStatus.equals("YES", ignoreCase = true)
                             } else {
-                                incomeStatus.equals("Yes", ignoreCase = true)
+                                incomeStatus.equals("YES", ignoreCase = true)
                             }
-
-                            val date = LocalDate.parse(dateStr, dateFormatter)
-                            val time = try {
-                                LocalTime.parse(timeStr.uppercase(), timeFormatter)
-                            } catch (e: Exception) {
-                                LocalTime.parse(timeStr.uppercase(), timeFormatterAlt)
-                            }
-                            val transactionTime = date.atTime(time).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                            
-                            // Smart Category Merging
-                            val category = app.ledgerpop.data.category.CategoryEngine.normalize(categoryRaw)
-                            
-                            // Smart Account Merging
-                            val account = matchAccount(accountRaw, existingAccounts)
-
-                            val hashKey = "CSV_${transactionTime}_${amount}_${merchant}_${type}"
-
-                            transactions.add(
-                                SmsTransactionEntity(
-                                    sender = "CSV",
-                                    body = "Imported from CSV",
-                                    amount = amount,
-                                    type = type,
-                                    merchant = merchant,
-                                    category = category,
-                                    accountHint = account,
-                                    isBillable = isBillable,
-                                    transactionTime = transactionTime,
-                                    hashKey = hashKey,
-                                    bank = "",
-                                    note = note
-                                )
-                            )
-                        } catch (e: Exception) {
-                            // Skip invalid lines
+                        } else {
+                            // Minimal format
+                            categoryRaw = parts.getOrNull(6) ?: ""
+                            note = ""
+                            isBillable = true
                         }
+
+                        val type = if (typeStr.equals("DR", ignoreCase = true)) "DEBIT" else "CREDIT"
+
+                        // Robust Date/Time parsing
+                        var transactionTime: Long? = null
+                        for (df in dateFormatters) {
+                            try {
+                                val date = LocalDate.parse(dateStr, df)
+                                for (tf in timeFormatters) {
+                                    try {
+                                        val time = LocalTime.parse(timeStr.uppercase(), tf)
+                                        transactionTime = date.atTime(time).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                        break
+                                    } catch (_: Exception) {}
+                                }
+                                if (transactionTime != null) break
+                            } catch (_: Exception) {}
+                        }
+
+                        if (transactionTime == null) continue
+
+                        val category = app.ledgerpop.data.category.CategoryEngine.normalize(categoryRaw)
+                        val account = matchAccount(accountRaw, existingAccounts)
+                        
+                        // Use a more unique hashKey for CSV imports to avoid collapsing identical-looking rows
+                        // that occur within the same second.
+                        val hashKey = "CSV_${transactionTime}_${amount}_${merchant}_${type}_${System.nanoTime()}_$i"
+
+                        transactions.add(
+                            SmsTransactionEntity(
+                                sender = "CSV",
+                                body = "Imported from CSV",
+                                amount = amount,
+                                type = type,
+                                merchant = merchant,
+                                category = category,
+                                accountHint = account,
+                                isBillable = isBillable,
+                                transactionTime = transactionTime,
+                                hashKey = hashKey,
+                                bank = "",
+                                note = note
+                            )
+                        )
+                    } catch (e: Exception) {
+                        // Skip malformed row
                     }
-                    line = reader.readLine()
                 }
             }
         }
         return transactions
     }
 
-    private fun matchAccount(csvAccount: String, existingAccounts: List<String>): String {
+    private fun parseCsvContent(content: String, delimiter: Char): List<List<String>> {
+        val result = mutableListOf<List<String>>()
+        var currentLine = mutableListOf<String>()
+        var currentToken = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < content.length) {
+            val c = content[i]
+            when {
+                c == '\"' -> {
+                    if (inQuotes && i + 1 < content.length && content[i + 1] == '\"') {
+                        currentToken.append('\"')
+                        i++
+                    } else {
+                        inQuotes = !inQuotes
+                    }
+                }
+                c == delimiter && !inQuotes -> {
+                    currentLine.add(currentToken.toString().trim())
+                    currentToken = StringBuilder()
+                }
+                (c == '\n' || c == '\r') && !inQuotes -> {
+                    if (c == '\r' && i + 1 < content.length && content[i + 1] == '\n') {
+                        i++
+                    }
+                    currentLine.add(currentToken.toString().trim())
+                    if (currentLine.any { it.isNotEmpty() }) {
+                        result.add(currentLine)
+                    }
+                    currentLine = mutableListOf()
+                    currentToken = StringBuilder()
+                }
+                else -> {
+                    currentToken.append(c)
+                }
+            }
+            i++
+        }
+        // Add final tokens
+        if (currentToken.isNotEmpty() || currentLine.isNotEmpty()) {
+            currentLine.add(currentToken.toString().trim())
+            if (currentLine.any { it.isNotEmpty() }) {
+                result.add(currentLine)
+            }
+        }
+        return result
+    }
+
+    private suspend fun matchAccount(csvAccount: String, existingAccounts: List<String>): String {
         if (csvAccount.isBlank()) return ""
+
+        // 0. Check for Aliases first
+        db.accountAliasDao().getTargetName(csvAccount)?.let { return it }
         
         // 1. Exact match (ignore case)
         existingAccounts.find { it.equals(csvAccount, ignoreCase = true) }?.let { return it }
@@ -738,32 +803,6 @@ class SettingsViewModel(
         }?.let { return it }
         
         return csvAccount
-    }
-
-    private fun parseCsvLine(line: String): List<String> {
-        val result = mutableListOf<String>()
-        var current = StringBuilder()
-        var inQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            if (c == '\"') {
-                if (inQuotes && i + 1 < line.length && line[i + 1] == '\"') {
-                    current.append('\"')
-                    i++
-                } else {
-                    inQuotes = !inQuotes
-                }
-            } else if (c == ',' && !inQuotes) {
-                result.add(current.toString())
-                current = StringBuilder()
-            } else {
-                current.append(c)
-            }
-            i++
-        }
-        result.add(current.toString())
-        return result
     }
 
     companion object {

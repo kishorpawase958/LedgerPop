@@ -290,7 +290,31 @@ class AnalyticsViewModel(
         viewModelScope.launch {
             try {
                 val state = uiState.value
-                val txns = state.filteredTransactions
+
+                // Filter allTransactions by the same filters but ignore isBillable
+                var exportList = state.allTransactions
+
+                state.startDateMillis?.let { start ->
+                    exportList = exportList.filter { it.transactionTime >= start }
+                }
+                state.endDateMillis?.let { end ->
+                    exportList = exportList.filter { it.transactionTime <= (end + 86400000L - 1) }
+                }
+                if (state.selectedAccount != "All") {
+                    exportList = exportList.filter { it.accountHint.ifBlank { "Unknown" } == state.selectedAccount }
+                }
+                if (state.selectedCategory != "All") {
+                    exportList = exportList.filter { CategoryEngine.normalize(it.category) == state.selectedCategory }
+                }
+                if (state.selectedMonth != null) {
+                    val trendFormat = formats[state.groupBy]!!
+                    exportList = exportList.filter {
+                        val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
+                        trendFormat.format(cal.time) == state.selectedMonth
+                    }
+                }
+
+                val txns = exportList.sortedByDescending { it.transactionTime }
                 if (txns.isEmpty()) return@launch
 
                 val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -309,8 +333,13 @@ class AnalyticsViewModel(
                     val drCr = if (txn.type == "DEBIT") "DR" else "CR"
                     val account = "\"${txn.accountHint.ifBlank { "Unknown" }.replace("\"", "\"\"")}\""
 
-                    val isExpenseReported = if (txn.isBillable && txn.type == "DEBIT") "Yes" else "No"
-                    val isIncomeReported = if (txn.isBillable && txn.type == "CREDIT") "Yes" else "No"
+                    val isExpenseReported = if (txn.type == "DEBIT") {
+                        if (txn.isBillable) "YES" else "NO"
+                    } else "-"
+
+                    val isIncomeReported = if (txn.type == "CREDIT") {
+                        if (txn.isBillable) "YES" else "NO"
+                    } else "-"
 
                     val category = "\"${txn.category.ifBlank { "Other" }.replace("\"", "\"\"")}\""
                     val note = "\"${txn.note.replace("\"", "\"\"")}\""

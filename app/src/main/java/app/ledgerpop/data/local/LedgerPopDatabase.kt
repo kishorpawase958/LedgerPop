@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -25,6 +27,13 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun accountAliasDao(): AccountAliasDao
 
     companion object {
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Add the 'note' column to 'sms_transactions' table
+                db.execSQL("ALTER TABLE sms_transactions ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: LedgerPopDatabase? = null
 
@@ -35,6 +44,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
                     LedgerPopDatabase::class.java,
                     "ledgerpop_db"
                 )
+                    .addMigrations(MIGRATION_8_9)
                     .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }
