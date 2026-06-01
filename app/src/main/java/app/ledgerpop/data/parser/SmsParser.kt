@@ -25,7 +25,7 @@ object SmsParser {
 
     private val debitKeywords = listOf("debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of")
     private val creditKeywords = listOf("credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
-    private val spamKeywords = listOf("OTP","Reminder","cooling period","generated", "request", "require", "allot", "disburse", "declined", "failed", "unsuccessful", "insufficient", "will be", "due")
+    private val spamKeywords = listOf("otp","one time password","Reminder","cooling period","generated", "request", "require", "allot", "disburse", "declined", "failed", "unsuccessful", "insufficient", "will be", "due")
 
     fun parse(sender: String, body: String): ParsedSmsTransaction? {
         val text = body.replace("\n", " ").replace(Regex("""\s+"""), " ").trim()
