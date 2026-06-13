@@ -25,6 +25,7 @@ import app.ledgerpop.ui.state.SettingsUiState
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.data.backup.BackupScheduler
 import app.ledgerpop.data.backup.BackupManager
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -469,113 +470,128 @@ class SettingsViewModel(
                     }
                 }
 
-                // 2. Restore Transactions
-                val txnsArray = root.optJSONArray("transactions")
-                if (txnsArray != null) {
-                    val txns = mutableListOf<SmsTransactionEntity>()
-                    for (i in 0 until txnsArray.length()) {
-                        val obj = txnsArray.getJSONObject(i)
-                        txns.add(SmsTransactionEntity(
-                            id = obj.optInt("id", 0),
-                            sender = obj.getString("sender"),
-                            body = obj.getString("body"),
-                            amount = obj.getDouble("amount"),
-                            originalAmount = if (obj.has("originalAmount") && !obj.isNull("originalAmount")) obj.getDouble("originalAmount") else null,
-                            type = obj.getString("type"),
-                            merchant = obj.getString("merchant"),
-                            category = obj.getString("category"),
-                            accountHint = obj.optString("accountHint", ""),
-                            isBillable = obj.optBoolean("isBillable", true),
-                            transactionTime = obj.getLong("transactionTime"),
-                            hashKey = obj.getString("hashKey"),
-                            bank = obj.optString("bank", ""),
-                            note = obj.optString("note", ""),
-                            linkedTransactionId = if (obj.has("linkedTransactionId") && !obj.isNull("linkedTransactionId")) obj.getInt("linkedTransactionId") else null
-                        ))
-                    }
-                    // Wipe and restore transactions
-                    db.smsTransactionDao().deleteAll()
-                    if (txns.isNotEmpty()) {
-                        db.smsTransactionDao().insertAll(txns)
-                    }
-                }
+                db.withTransaction {
+                    // 2. Restore Transactions
+                    val txnsArray = root.optJSONArray("transactions")
+                    if (txnsArray != null) {
+                        val txns = mutableListOf<SmsTransactionEntity>()
+                        val allIds = mutableSetOf<Int>()
 
-                // 3. Restore Audits
-                val auditsArray = root.optJSONArray("auditLogs")
-                if (auditsArray != null) {
-                    val audits = mutableListOf<SmsAuditEntity>()
-                    for (i in 0 until auditsArray.length()) {
-                        val obj = auditsArray.getJSONObject(i)
-                        audits.add(SmsAuditEntity(
-                            id = 0, // Auto-generate
-                            sender = obj.getString("sender"),
-                            body = obj.getString("body"),
-                            timestamp = obj.getLong("timestamp"),
-                            status = obj.getString("status"),
-                            skipReason = obj.optString("skipReason", ""),
-                            parsedAmount = obj.optDouble("parsedAmount", 0.0),
-                            parsedType = obj.optString("parsedType", ""),
-                            reportType = obj.optString("reportType", ""),
-                            reportNote = obj.optString("reportNote", ""),
-                            hashKey = obj.getString("hashKey")
-                        ))
-                    }
-                    db.smsAuditDao().deleteAll()
-                    if (audits.isNotEmpty()) {
-                        db.smsAuditDao().insertAll(audits)
-                    }
-                }
+                        // First pass: collect all IDs that will be present
+                        for (i in 0 until txnsArray.length()) {
+                            val id = txnsArray.getJSONObject(i).optInt("id", 0)
+                            if (id != 0) allIds.add(id)
+                        }
 
-                // 4. Restore Categories
-                val categoriesArray = root.optJSONArray("customCategories")
-                if (categoriesArray != null) {
-                    val categories = mutableListOf<CustomCategoryEntity>()
-                    for (i in 0 until categoriesArray.length()) {
-                        val obj = categoriesArray.getJSONObject(i)
-                        categories.add(CustomCategoryEntity(
-                            id = obj.optInt("id", 0),
-                            name = obj.getString("name"),
-                            type = obj.getString("type"),
-                            emoji = obj.getString("emoji")
-                        ))
-                    }
-                    db.customCategoryDao().deleteAll()
-                    categories.forEach { db.customCategoryDao().insert(it) }
-                }
+                        for (i in 0 until txnsArray.length()) {
+                            val obj = txnsArray.getJSONObject(i)
+                            val linkedId = if (obj.has("linkedTransactionId") && !obj.isNull("linkedTransactionId")) obj.getInt("linkedTransactionId") else null
 
-                // 5. Restore Accounts
-                val accountsArray = root.optJSONArray("accounts")
-                if (accountsArray != null) {
-                    val accounts = mutableListOf<AccountEntity>()
-                    for (i in 0 until accountsArray.length()) {
-                        val obj = accountsArray.getJSONObject(i)
-                        accounts.add(AccountEntity(
-                            id = obj.optInt("id", 0),
-                            name = obj.getString("name"),
-                            icon = obj.getString("icon"),
-                            type = obj.optString("type", "BANK")
-                        ))
+                            txns.add(SmsTransactionEntity(
+                                id = obj.optInt("id", 0),
+                                sender = obj.getString("sender"),
+                                body = obj.getString("body"),
+                                amount = obj.getDouble("amount"),
+                                originalAmount = if (obj.has("originalAmount") && !obj.isNull("originalAmount")) obj.getDouble("originalAmount") else null,
+                                type = obj.getString("type"),
+                                merchant = obj.getString("merchant"),
+                                category = obj.getString("category"),
+                                accountHint = obj.optString("accountHint", ""),
+                                isBillable = obj.optBoolean("isBillable", true),
+                                transactionTime = obj.getLong("transactionTime"),
+                                hashKey = obj.getString("hashKey"),
+                                bank = obj.optString("bank", ""),
+                                note = obj.optString("note", ""),
+                                linkedTransactionId = if (linkedId != null && allIds.contains(linkedId)) linkedId else null
+                            ))
+                        }
+                        // Wipe and restore transactions
+                        db.smsTransactionDao().deleteAll()
+                        if (txns.isNotEmpty()) {
+                            // Sort to ensure parents (linkedTransactionId == null) are inserted before children
+                            // to satisfy foreign key constraints if enforced row-by-row.
+                            val sortedTxns = txns.sortedBy { it.linkedTransactionId != null }
+                            db.smsTransactionDao().insertAll(sortedTxns)
+                        }
                     }
-                    db.accountDao().deleteAll()
-                    accounts.forEach { db.accountDao().insert(it) }
-                }
 
-                // 6. Restore Aliases
-                val aliasesArray = root.optJSONArray("accountAliases")
-                if (aliasesArray != null) {
-                    db.accountAliasDao().deleteAll()
-                    for (i in 0 until aliasesArray.length()) {
-                        val obj = aliasesArray.getJSONObject(i)
-                        val aliasName = obj.getString("alias")
-                        val targetName = obj.getString("targetAccountName")
-                        
-                        db.accountAliasDao().insert(AccountAliasEntity(
-                            alias = aliasName,
-                            targetAccountName = targetName
-                        ))
-                        
-                        // Update existing transactions to use the target account name if they match the alias
-                        db.smsTransactionDao().updateAccountName(aliasName, targetName)
+                    // 3. Restore Audits
+                    val auditsArray = root.optJSONArray("auditLogs")
+                    if (auditsArray != null) {
+                        val audits = mutableListOf<SmsAuditEntity>()
+                        for (i in 0 until auditsArray.length()) {
+                            val obj = auditsArray.getJSONObject(i)
+                            audits.add(SmsAuditEntity(
+                                id = 0, // Auto-generate
+                                sender = obj.getString("sender"),
+                                body = obj.getString("body"),
+                                timestamp = obj.getLong("timestamp"),
+                                status = obj.getString("status"),
+                                skipReason = obj.optString("skipReason", ""),
+                                parsedAmount = obj.optDouble("parsedAmount", 0.0),
+                                parsedType = obj.optString("parsedType", ""),
+                                reportType = obj.optString("reportType", ""),
+                                reportNote = obj.optString("reportNote", ""),
+                                hashKey = obj.getString("hashKey")
+                            ))
+                        }
+                        db.smsAuditDao().deleteAll()
+                        if (audits.isNotEmpty()) {
+                            db.smsAuditDao().insertAll(audits)
+                        }
+                    }
+
+                    // 4. Restore Categories
+                    val categoriesArray = root.optJSONArray("customCategories")
+                    if (categoriesArray != null) {
+                        val categories = mutableListOf<CustomCategoryEntity>()
+                        for (i in 0 until categoriesArray.length()) {
+                            val obj = categoriesArray.getJSONObject(i)
+                            categories.add(CustomCategoryEntity(
+                                id = obj.optInt("id", 0),
+                                name = obj.getString("name"),
+                                type = obj.getString("type"),
+                                emoji = obj.getString("emoji")
+                            ))
+                        }
+                        db.customCategoryDao().deleteAll()
+                        categories.forEach { db.customCategoryDao().insert(it) }
+                    }
+
+                    // 5. Restore Accounts
+                    val accountsArray = root.optJSONArray("accounts")
+                    if (accountsArray != null) {
+                        val accounts = mutableListOf<AccountEntity>()
+                        for (i in 0 until accountsArray.length()) {
+                            val obj = accountsArray.getJSONObject(i)
+                            accounts.add(AccountEntity(
+                                id = obj.optInt("id", 0),
+                                name = obj.getString("name"),
+                                icon = obj.getString("icon"),
+                                type = obj.optString("type", "BANK")
+                            ))
+                        }
+                        db.accountDao().deleteAll()
+                        accounts.forEach { db.accountDao().insert(it) }
+                    }
+
+                    // 6. Restore Aliases
+                    val aliasesArray = root.optJSONArray("accountAliases")
+                    if (aliasesArray != null) {
+                        db.accountAliasDao().deleteAll()
+                        for (i in 0 until aliasesArray.length()) {
+                            val obj = aliasesArray.getJSONObject(i)
+                            val aliasName = obj.getString("alias")
+                            val targetName = obj.getString("targetAccountName")
+
+                            db.accountAliasDao().insert(AccountAliasEntity(
+                                alias = aliasName,
+                                targetAccountName = targetName
+                            ))
+
+                            // Update existing transactions to use the target account name if they match the alias
+                            db.smsTransactionDao().updateAccountName(aliasName, targetName)
+                        }
                     }
                 }
 
