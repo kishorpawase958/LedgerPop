@@ -15,8 +15,8 @@ android {
         minSdk = 31
         //noinspection OldTargetApi
         targetSdk = 37
-        versionCode = 8           // ← increase by 1 from last time (was 7)
-        versionName = "2.0.5"     // ← change from "2.0.3" to "2.0.5"
+        versionCode = 9           // ← increase by 1 from last time (was 8)
+        versionName = "2.0.6"     // ← change from "2.0.5" to "2.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -26,15 +26,23 @@ android {
     }
     signingConfigs {
         create("release") {
+            val properties = Properties()
             val keystorePropertiesFile = rootProject.file("keystore.properties")
             if (keystorePropertiesFile.exists()) {
-                val properties = Properties()
-                properties.load(keystorePropertiesFile.inputStream())
+                keystorePropertiesFile.inputStream().use { properties.load(it) }
+            }
 
-                storeFile = rootProject.file(properties.getProperty("storeFile"))
-                storePassword = properties.getProperty("storePassword")
-                keyAlias = properties.getProperty("keyAlias")
-                keyPassword = properties.getProperty("keyPassword")
+            // Prioritize Environment Variables (GitHub CI), then fall back to keystore.properties (Local)
+            val sFile = System.getenv("KEYSTORE_FILE") ?: properties.getProperty("storeFile")
+            val sPassword = System.getenv("KEYSTORE_PASSWORD") ?: properties.getProperty("storePassword")
+            val kAlias = System.getenv("KEY_ALIAS") ?: properties.getProperty("keyAlias")
+            val kPassword = System.getenv("KEY_PASSWORD") ?: properties.getProperty("keyPassword")
+
+            if (sFile != null && sPassword != null && kAlias != null && kPassword != null) {
+                storeFile = rootProject.file(sFile)
+                storePassword = sPassword
+                keyAlias = kAlias
+                keyPassword = kPassword
             }
         }
     }
@@ -46,8 +54,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (rootProject.file("keystore.properties").exists()) {
-                signingConfigs.getByName("release")
+            // Use release signing if configured, otherwise fallback to debug
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning.storeFile != null) {
+                releaseSigning
             } else {
                 signingConfigs.getByName("debug")
             }
