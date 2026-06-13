@@ -28,13 +28,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.ui.components.ScrollableBarChart
+import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.theme.Purple500
 import app.ledgerpop.data.category.CategoryEngine
@@ -45,6 +45,7 @@ import app.ledgerpop.ui.viewmodel.AnalyticsViewModel
 import app.ledgerpop.ui.viewmodel.DrillDownType
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
 import app.ledgerpop.screens.transactions.QuickCategoryUpdateDialog
+import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,6 +81,10 @@ fun AnalyticsScreen() {
     val scope = rememberCoroutineScope()
     val viewModel: AnalyticsViewModel = viewModel(factory = AnalyticsViewModel.factory(db))
     val uiState by viewModel.uiState.collectAsState()
+    
+    val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
+    val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
+    val accentLight = if (isMidnight) MaterialTheme.colorScheme.primary else Purple500
 
     val drillDownData by viewModel.drillDownTransactions.collectAsState()
     val drillDownTitle by viewModel.drillDownTitle.collectAsState()
@@ -117,7 +122,6 @@ fun AnalyticsScreen() {
                     Text(
                         text = "Analytics",
                         style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     IconButton(
@@ -162,8 +166,7 @@ fun AnalyticsScreen() {
                         ) {
                             Text(
                                 "Filters",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                style = MaterialTheme.typography.titleMedium
                             )
                             TextButton(
                                 onClick = { viewModel.clearFilters() },
@@ -213,8 +216,7 @@ fun AnalyticsScreen() {
                                     }
                                     Text(
                                         dateText,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
+                                        style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
                                 Spacer(Modifier.weight(1f))
@@ -300,11 +302,11 @@ fun AnalyticsScreen() {
 
             // ── KPIs (Clickable) ──────────────────────────────────────────────
             item {
-                val incomeText = remember(uiState.totalIncome, locale) {
-                    "${if (uiState.totalIncome < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.totalIncome))}"
+                val incomeText = remember(uiState.totalIncome) {
+                    "${if (uiState.totalIncome < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.totalIncome)}"
                 }
-                val expenseText = remember(uiState.totalExpense, locale) {
-                    "${if (uiState.totalExpense < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.totalExpense))}"
+                val expenseText = remember(uiState.totalExpense) {
+                    "${if (uiState.totalExpense < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.totalExpense)}"
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -320,7 +322,7 @@ fun AnalyticsScreen() {
                     KpiCard(
                         label = "Expenses",
                         value = expenseText,
-                        color = Purple500,
+                        color = accentLight,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.openDrillDown(DrillDownType.Expense) }
                     )
@@ -329,19 +331,19 @@ fun AnalyticsScreen() {
             }
 
             item {
-                val netText = remember(uiState.net, locale) {
-                    "${if (uiState.net < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.net))}"
+                val netText = remember(uiState.net) {
+                    "${if (uiState.net < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.net)}"
                 }
                 val netColor = when {
                     uiState.net > 0 -> Color(0xFF00B894)
                     uiState.net < 0 -> MaterialTheme.colorScheme.error
                     else -> Color.White
                 }
-                val avgDebitText = remember(uiState.avgDebit, locale) {
-                    "${if (uiState.avgDebit < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.avgDebit))}"
+                val avgDebitText = remember(uiState.avgDebit) {
+                    "${if (uiState.avgDebit < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.avgDebit)}"
                 }
-                val avgCreditText = remember(uiState.avgCredit, locale) {
-                    "${if (uiState.avgCredit < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(uiState.avgCredit))}"
+                val avgCreditText = remember(uiState.avgCredit) {
+                    "${if (uiState.avgCredit < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.avgCredit)}"
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -349,7 +351,7 @@ fun AnalyticsScreen() {
                 ) {
                     KpiCard("Net", netText, netColor, Modifier.weight(1f))
                     KpiCard("Avg Credit", avgCreditText, Color(0xFF00B894), Modifier.weight(1f))
-                    KpiCard("Avg Debit", avgDebitText, color = Purple500, Modifier.weight(1f))
+                    KpiCard("Avg Debit", avgDebitText, color = accentLight, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -360,7 +362,6 @@ fun AnalyticsScreen() {
                     Text(
                         text = "Monthly Trend",
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)
                     )
                     ScrollableBarChart(
@@ -388,12 +389,11 @@ fun AnalyticsScreen() {
                             else
                                 "Income Distribution",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         val isIncome = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME
                         val themeColor by animateColorAsState(
-                            if (isIncome) Color(0xFF00B894) else Purple700,
+                            if (isIncome) Color(0xFF00B894) else accentColor,
                             label = "ThemeColor"
                         )
                         val switchBgColor by animateColorAsState(
@@ -432,8 +432,7 @@ fun AnalyticsScreen() {
                                 Text(
                                     text = if (isIncome) "Income" else "Spends",
                                     color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontSize = 11.sp,
                                     letterSpacing = 0.5.sp
                                 )
@@ -467,7 +466,6 @@ fun AnalyticsScreen() {
                     Text(
                         breakdownTitle,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                     )
@@ -527,7 +525,7 @@ fun AnalyticsScreen() {
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 135.dp),
-            containerColor = Purple700,
+            containerColor = accentColor,
             contentColor = Color.White,
             shape = RoundedCornerShape(18.dp)
         ) {
@@ -551,7 +549,6 @@ fun AnalyticsScreen() {
                 Text(
                     text = drillDownTitle,
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                 )
                 Text(
@@ -711,8 +708,18 @@ private fun CategoryDonutChart(
 
     val locale = LocalConfiguration.current.locales[0]
     var expanded by remember { mutableStateOf(false) }
+    val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
     val displaySummaries = if (expanded) summaries else summaries.take(7)
-    val colors = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME) INCOME_COLORS else SPENDS_COLORS
+    
+    val colors = remember(viewType, isMidnight) {
+        val baseColors = if (viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME) INCOME_COLORS else SPENDS_COLORS
+        if (isMidnight) {
+            val midnightAccent = Color(0xFF003FA4) // Midnight Navy
+            listOf(midnightAccent) + baseColors.drop(1)
+        } else {
+            baseColors
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -777,13 +784,12 @@ private fun CategoryDonutChart(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             val totalAmount = remember(summaries) { summaries.sumOf { it.amount } }
-                            val formattedTotal = remember(totalAmount, locale) {
-                                "${if (totalAmount < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(totalAmount))}"
+                            val formattedTotal = remember(totalAmount) {
+                                "${if (totalAmount < 0) "−" else ""}₹${AmountUtils.formatAmount(totalAmount)}"
                             }
                             Text(
                                 text = formattedTotal,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -832,7 +838,6 @@ private fun CategoryDonutChart(
                             Text(
                                 text = "${summary.percentage.toInt()}%",
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -884,7 +889,6 @@ private fun KpiCard(
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
                 color = color,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -911,8 +915,8 @@ private fun CategoryRow(
     else
         "of income"
 
-    val formattedAmount = remember(summary.amount, locale) {
-        "${if (summary.amount < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(summary.amount))}"
+    val formattedAmount = remember(summary.amount) {
+        "${if (summary.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(summary.amount)}"
     }
 
     Card(
@@ -928,8 +932,8 @@ private fun CategoryRow(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(summary.category, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                    Text(formattedAmount, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = amountColor)
+                    Text(summary.category, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(formattedAmount, style = MaterialTheme.typography.bodyMedium, color = amountColor)
                 }
                 Spacer(Modifier.height(6.dp))
                 Box(modifier = Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))) {
@@ -995,7 +999,6 @@ private fun TransactionRowCompact(
             Text(
                 text = txn.merchant.ifBlank { txn.sender },
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1016,21 +1019,37 @@ private fun TransactionRowCompact(
                     )
                 }
             }
+
+            if (txn.note.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = txn.note.take(50),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
 
         Column(horizontalAlignment = Alignment.End) {
-            val formattedAmount = remember(txn.amount, locale) {
-                "${if (txn.amount < 0) "−" else ""}₹${"%,.0f".format(locale, kotlin.math.abs(txn.amount))}"
+            val formattedAmount = remember(txn.amount) {
+                "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}"
             }
             Text(
                 text = formattedAmount,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
                 color = if (isBillable) amountColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (txn.originalAmount != null) {
-                val formattedOriginal = remember(txn.originalAmount, locale) {
-                    "₹${"%,.0f".format(locale, txn.originalAmount)}"
+                val formattedOriginal = remember(txn.originalAmount) {
+                    "₹${AmountUtils.formatAmount(txn.originalAmount)}"
                 }
                 Text(
                     text = formattedOriginal,
@@ -1054,6 +1073,23 @@ private fun TransactionRowCompact(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 10.sp
+                    )
+                }
+            }
+
+            if (txn.note.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = txn.note.take(50),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

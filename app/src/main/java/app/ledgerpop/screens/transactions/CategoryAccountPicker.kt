@@ -33,10 +33,11 @@ fun CategoryAccountPicker(
     onDismiss: () -> Unit,
     customCategories: List<CustomCategoryEntity> = emptyList(),
     accounts: List<AccountEntity> = emptyList(),
-    onUpdateEmoji: ((String, String) -> Unit)? = null,
+    onUpdate: ((String, String, String) -> Unit)? = null,
+    onAdd: ((String) -> Unit)? = null,
 ) {
     var newValue by remember { mutableStateOf("") }
-    var editingEmojiFor by remember { mutableStateOf<String?>(null) }
+    var editingItemName by remember { mutableStateOf<String?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -79,6 +80,7 @@ fun CategoryAccountPicker(
                         onClick = {
                             val trimmed = newValue.trim()
                             if (trimmed.isNotEmpty()) {
+                                onAdd?.invoke(trimmed)
                                 onSelect(trimmed)
                                 onDismiss()
                             }
@@ -138,7 +140,7 @@ fun CategoryAccountPicker(
                                                 modifier = Modifier
                                                     .size(36.dp)
                                                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                                                    .clickable { editingEmojiFor = option },
+                                                    .clickable { editingItemName = option },
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(currentEmoji, fontSize = 18.sp)
@@ -155,9 +157,9 @@ fun CategoryAccountPicker(
                                         )
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if ((isCategory || isAccount) && onUpdateEmoji != null) {
-                                            IconButton(onClick = { editingEmojiFor = option }) {
-                                                Icon(Icons.Rounded.Edit, contentDescription = "Edit Emoji", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
+                                        if ((isCategory || isAccount) && onUpdate != null) {
+                                            IconButton(onClick = { editingItemName = option }) {
+                                                Icon(Icons.Rounded.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
                                             }
                                         }
                                         if (option == selected) {
@@ -192,39 +194,53 @@ fun CategoryAccountPicker(
         }
     }
 
-    editingEmojiFor?.let { optionName ->
+    editingItemName?.let { oldName ->
         val isCategory = title.contains("Category", ignoreCase = true)
         val initialEmoji = if (isCategory) {
-            customCategories.find { it.name == optionName }?.emoji ?: CategoryEngine.emoji(optionName, customCategories)
+            customCategories.find { it.name == oldName }?.emoji ?: CategoryEngine.emoji(oldName, customCategories)
         } else {
-            accounts.find { it.name == optionName }?.icon ?: "🏦"
+            accounts.find { it.name == oldName }?.icon ?: "🏦"
         }
         
+        var tempName by remember { mutableStateOf(oldName) }
         var tempEmoji by remember { mutableStateOf(initialEmoji) }
+
         AlertDialog(
-            onDismissRequest = { editingEmojiFor = null },
-            title = { Text("Edit Emoji for $optionName") },
+            onDismissRequest = { editingItemName = null },
+            title = { Text("Edit ${if (isCategory) "Category" else "Account"}") },
             text = {
-                OutlinedTextField(
-                    value = tempEmoji,
-                    onValueChange = { tempEmoji = it },
-                    label = { Text("Emoji") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = tempName,
+                        onValueChange = { tempName = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = tempEmoji,
+                        onValueChange = { tempEmoji = it },
+                        label = { Text("Emoji / Icon") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 Button(
-            onClick = {
-                onUpdateEmoji?.invoke(optionName, tempEmoji)
-                editingEmojiFor = null
-            }
-        ) {
+                    onClick = {
+                        onUpdate?.invoke(oldName, tempName.trim(), tempEmoji.trim())
+                        if (oldName == selected) {
+                            onSelect(tempName.trim())
+                        }
+                        editingItemName = null
+                    }
+                ) {
                     Text("Save")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { editingEmojiFor = null }) { Text("Cancel") }
+                TextButton(onClick = { editingItemName = null }) { Text("Cancel") }
             }
         )
     }

@@ -15,8 +15,8 @@ android {
         minSdk = 31
         //noinspection OldTargetApi
         targetSdk = 37
-        versionCode = 7           // ← increase by 1 from last time (was 6)
-        versionName = "2.0.2"     // ← change from "2.0.1" to "2.0.2"
+        versionCode = 8           // ← increase by 1 from last time (was 7)
+        versionName = "2.0.5"     // ← change from "2.0.3" to "2.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.text)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)

@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -132,7 +131,6 @@ fun SettingsScreen(
         Text(
             "Settings",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
 
@@ -281,7 +279,7 @@ private fun ProfileSection(userName: String, onClick: () -> Unit) {
                 Spacer(Modifier.width(16.dp))
                 Column {
                     Text("Display Name", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(userName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    Text(userName, style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }
@@ -396,7 +394,7 @@ private fun ManagementSection(
                     Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Auto Backup", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        Text("Auto Backup", style = MaterialTheme.typography.bodyLarge)
                         Text("Periodic background backup", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
@@ -450,12 +448,12 @@ private fun ManagementSection(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) {
                     MiniCard(onClick = onBackup) {
-                        Text("Backup Now", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.Medium)
+                        Text("Backup Now", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
                 }
                 Box(Modifier.weight(1f)) {
                     MiniCard(onClick = onRestore) {
-                        Text("Restore", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.Medium)
+                        Text("Restore", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
                 }
             }
@@ -472,7 +470,7 @@ private fun ManagementSection(
                 ) {
                     Icon(Icons.Rounded.DeleteForever, null, tint = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(12.dp))
-                    Text("Clear All Data", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                    Text("Clear All Data", color = MaterialTheme.colorScheme.error)
                 }
             }
 
@@ -480,7 +478,7 @@ private fun ManagementSection(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.RestartAlt, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Restart App", fontWeight = FontWeight.Medium)
+                    Text("Restart App")
                 }
             }
         }
@@ -504,7 +502,7 @@ private fun AboutSection() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text("LedgerPop", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("LedgerPop", style = MaterialTheme.typography.titleMedium)
             Text("Version $versionName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Text(
@@ -540,6 +538,10 @@ private fun ThemeDialog(
                 }
                 ThemeOption("Dark Theme", currentTheme == AppTheme.DARK) {
                     onThemeSelected(AppTheme.DARK)
+                    onDismiss()
+                }
+                ThemeOption("Midnight Navy", currentTheme == AppTheme.MIDNIGHT) {
+                    onThemeSelected(AppTheme.MIDNIGHT)
                     onDismiss()
                 }
             }
@@ -688,10 +690,9 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
     Column {
         Text(
             text = title.uppercase(),
-            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 1.sp),
+            style = MaterialTheme.typography.titleSmall.copy(letterSpacing = 1.sp),
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 8.dp, bottom = 12.dp),
-            fontWeight = FontWeight.Bold
+            modifier = Modifier.padding(start = 8.dp, bottom = 12.dp)
         )
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -742,7 +743,7 @@ private fun SettingRow(
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (trailing != null) {

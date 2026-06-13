@@ -25,3 +25,11 @@ val Neutral900 = Color(0xFF0D1020)
 val SurfaceDark2 = Color(0xFF121212)
 val SurfaceDark3 = Color(0xFF1E1E1E)
 val BackgroundDark = Color(0xFF000000)
+
+// Midnight Theme Colors
+val BackgroundMidnight = Color(0xFF0B0E1B) // Deep Navy
+val SurfaceMidnight = Color(0xFF161B33)    // Light Navy Blue
+val SurfaceVariantMidnight = Color(0xFF242B4D)
+val MidnightPrimary = Color(0xFF95B0FF)    // Soft Blue
+val MidnightSecondary = Color(0xFFA7B1CC)  // Steel Blue
+val MidnightTertiary = Color(0xFF82D3FF)   // Sky Blue

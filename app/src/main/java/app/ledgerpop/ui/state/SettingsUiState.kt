@@ -6,7 +6,7 @@ import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.sms.ImportResult
 
 enum class AppTheme {
-    AUTO, LIGHT, DARK
+    AUTO, LIGHT, DARK, MIDNIGHT
 }
 
 data class SettingsUiState(

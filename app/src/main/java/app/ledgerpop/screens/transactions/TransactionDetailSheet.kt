@@ -20,9 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ledgerpop.data.category.CategoryEngine
@@ -30,6 +30,7 @@ import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -98,7 +99,11 @@ fun TransactionDetailSheet(
         (managed + existing).distinct().sorted()
     }
 
-    var amount by remember(txn) { mutableStateOf(txn.amount.toString()) }
+    var amount by remember(txn) { 
+        val amt = txn.amount
+        val s = if (amt == amt.toLong().toDouble()) amt.toLong().toString() else amt.toString()
+        mutableStateOf(s) 
+    }
     var merchant by remember(txn) { mutableStateOf(txn.merchant) }
     var category by remember(txn) { mutableStateOf(txn.category) }
     var account by remember(txn) { mutableStateOf(txn.accountHint) }
@@ -148,8 +153,7 @@ fun TransactionDetailSheet(
                 }
                 Text(
                     "Transaction",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Button(
                     onClick = {
@@ -191,8 +195,7 @@ fun TransactionDetailSheet(
                 Text(
                     text = account.ifBlank { "Unspecified Account" },
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 
                 Spacer(Modifier.height(16.dp))
@@ -206,18 +209,25 @@ fun TransactionDetailSheet(
                     Text(
                         text = "₹",
                         style = MaterialTheme.typography.displayMedium,
-                        color = amountColor,
-                        fontWeight = FontWeight.Bold
+                        color = amountColor
                     )
                     Spacer(Modifier.width(4.dp))
                     BasicTextField(
                         value = amount,
-                        onValueChange = { if (it.length <= 12) amount = it },
+                        onValueChange = { input ->
+                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            if (filtered.count { it == '.' } <= 1) {
+                                val afterDecimal = filtered.substringAfter(".", "")
+                                if (afterDecimal.length <= 2 && filtered.length <= 12) {
+                                    amount = filtered
+                                }
+                            }
+                        },
                         textStyle = MaterialTheme.typography.displayLarge.copy(
-                            fontWeight = FontWeight.Black,
                             color = amountColor
                         ),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        visualTransformation = AmountUtils.indianCurrencyTransformation,
                         singleLine = true,
                         modifier = Modifier.width(IntrinsicSize.Min).defaultMinSize(minWidth = 20.dp),
                         decorationBox = { innerTextField ->
@@ -225,7 +235,6 @@ fun TransactionDetailSheet(
                                 Text(
                                     text = "0",
                                     style = MaterialTheme.typography.displayLarge.copy(
-                                        fontWeight = FontWeight.Black,
                                         color = amountColor.copy(alpha = 0.3f)
                                     )
                                 )
@@ -242,7 +251,7 @@ fun TransactionDetailSheet(
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
                         Text(
-                            text = "Original: ₹${"%,.0f".format(originalAmount)}",
+                            text = "Original: ₹${AmountUtils.formatAmount(originalAmount ?: 0.0)}",
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -312,7 +321,7 @@ fun TransactionDetailSheet(
                         Icon(Icons.Rounded.CalendarToday, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         Column {
                             Text("Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Text(dateStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(dateStr, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -329,7 +338,7 @@ fun TransactionDetailSheet(
                         Icon(Icons.Rounded.Schedule, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         Column {
                             Text("Time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Text(timeStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(timeStr, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -373,7 +382,7 @@ fun TransactionDetailSheet(
                             tint = if (isBillable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                         )
                         Column {
-                            Text("Include in Analytics", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Include in Analytics", style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 if (isBillable) "Counted in your totals" else "Hidden from totals",
                                 style = MaterialTheme.typography.labelSmall,
@@ -390,8 +399,7 @@ fun TransactionDetailSheet(
                 Spacer(Modifier.height(24.dp))
                 Text(
                     if (isExpense) "LINKED REFUNDS" else "LINKED EXPENSE",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.outline,
                     letterSpacing = 1.sp
                 )
@@ -408,7 +416,7 @@ fun TransactionDetailSheet(
                                 val newAmount = baseOriginal - sumOfRemaining
                                 val finalOriginal = if (newAmount == baseOriginal) null else baseOriginal
                                 db.smsTransactionDao().update(txn.copy(amount = newAmount, originalAmount = finalOriginal))
-                                amount = newAmount.toString()
+                                amount = if (newAmount == newAmount.toLong().toDouble()) newAmount.toLong().toString() else newAmount.toString()
                                 originalAmount = finalOriginal
                             }
                         })
@@ -435,8 +443,7 @@ fun TransactionDetailSheet(
                 Column {
                     Text(
                         "ORIGINAL SMS",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
                     Surface(
@@ -546,15 +553,25 @@ fun TransactionDetailSheet(
             onSelect = { category = it },
             onDismiss = { showCategoryPicker = false },
             customCategories = customCategories,
-            onUpdateEmoji = { name, emoji ->
+            onAdd = { name ->
                 scope.launch {
-                    val existing = db.customCategoryDao().getByName(name)
+                    db.customCategoryDao().insert(
+                        CustomCategoryEntity(name = name, type = if (isExpense) "DEBIT" else "CREDIT")
+                    )
+                }
+            },
+            onUpdate = { oldName, newName, emoji ->
+                scope.launch {
+                    val existing = db.customCategoryDao().getByName(oldName)
                     if (existing != null) {
-                        db.customCategoryDao().insert(existing.copy(emoji = emoji))
+                        db.customCategoryDao().insert(existing.copy(name = newName, emoji = emoji))
                     } else {
                         db.customCategoryDao().insert(
-                            CustomCategoryEntity(name = name, type = if (isExpense) "DEBIT" else "CREDIT", emoji = emoji)
+                            CustomCategoryEntity(name = newName, type = if (isExpense) "DEBIT" else "CREDIT", emoji = emoji)
                         )
+                    }
+                    if (oldName != newName) {
+                        db.smsTransactionDao().updateCategoryName(oldName, newName)
                     }
                 }
             }
@@ -569,13 +586,21 @@ fun TransactionDetailSheet(
             onSelect = { account = it },
             onDismiss = { showAccountPicker = false },
             accounts = accounts,
-            onUpdateEmoji = { name, icon ->
+            onAdd = { name ->
                 scope.launch {
-                    val existing = db.accountDao().getByName(name)
+                    db.accountDao().insert(AccountEntity(name = name))
+                }
+            },
+            onUpdate = { oldName, newName, icon ->
+                scope.launch {
+                    val existing = db.accountDao().getByName(oldName)
                     if (existing != null) {
-                        db.accountDao().insert(existing.copy(icon = icon))
+                        db.accountDao().insert(existing.copy(name = newName, icon = icon))
                     } else {
-                        db.accountDao().insert(AccountEntity(name = name, icon = icon))
+                        db.accountDao().insert(AccountEntity(name = newName, icon = icon))
+                    }
+                    if (oldName != newName) {
+                        db.smsTransactionDao().updateAccountName(oldName, newName)
                     }
                 }
             }
@@ -609,7 +634,7 @@ fun TransactionDetailSheet(
                     val sumOfCredits = allLinked.sumOf { it.amount }
                     val newAmount = baseOriginal - sumOfCredits
                     db.smsTransactionDao().update(txn.copy(amount = newAmount, originalAmount = baseOriginal))
-                    amount = newAmount.toString()
+                    amount = if (newAmount == newAmount.toLong().toDouble()) newAmount.toLong().toString() else newAmount.toString()
                     originalAmount = baseOriginal
                 }
                 showLinkPicker = false
@@ -638,8 +663,7 @@ fun InfoField(
                 value = value,
                 onValueChange = onValueChange,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Medium
+                    color = MaterialTheme.colorScheme.onSurface
                 ),
                 decorationBox = { innerTextField ->
                     if (value.isEmpty()) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.outlineVariant)
@@ -676,7 +700,7 @@ fun InfoPickerField(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-            Text(value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(value, style = MaterialTheme.typography.bodyLarge)
         }
         Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.outlineVariant)
     }
@@ -708,8 +732,24 @@ fun LinkRow(
                 Text(CategoryEngine.emoji(txn.category, customCategories), style = MaterialTheme.typography.titleMedium)
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(txn.merchant.ifBlank { txn.sender }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                Text("$dateStr · ₹${"%,.0f".format(txn.amount)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Text(txn.merchant.ifBlank { txn.sender }, style = MaterialTheme.typography.bodyMedium)
+                Text("$dateStr · ₹${AmountUtils.formatAmount(txn.amount)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                if (txn.note.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = txn.note.take(50),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
             if (onUnlink != null) {
                 IconButton(onClick = onUnlink) {
@@ -741,7 +781,7 @@ fun LinkPickerDialog(
                         val dateStr = SimpleDateFormat("d MMM yy", LocalLocale.current.platformLocale).format(Date(txn.transactionTime))
                         ListItem(
                             headlineContent = { Text(txn.merchant.ifBlank { txn.sender }) },
-                            supportingContent = { Text("$dateStr · ₹${"%,.0f".format(txn.amount)}") },
+                            supportingContent = { Text("$dateStr · ₹${AmountUtils.formatAmount(txn.amount)}") },
                             modifier = Modifier.clickable { onSelect(txn) }
                         )
                     }

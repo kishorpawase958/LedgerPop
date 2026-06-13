@@ -274,7 +274,8 @@ class HomeViewModel(
                     HomeViewModel(
                         TransactionRepository(
                             database.smsTransactionDao(),
-                            database.customCategoryDao()
+                            database.customCategoryDao(),
+                            database.accountDao()
                         ),
                         context
                     ) as T

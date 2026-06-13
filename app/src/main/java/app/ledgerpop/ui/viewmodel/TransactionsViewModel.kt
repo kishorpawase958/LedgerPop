@@ -61,8 +61,9 @@ class TransactionsViewModel(
     val uiState: StateFlow<TransactionsUiState> = filters.flatMapLatest { f ->
         combine(
             repository.getAllTransactions(),
-            repository.getAllCustomCategories()
-        ) { transactions, customCategories ->
+            repository.getAllCustomCategories(),
+            repository.getAllAccounts()
+        ) { transactions, customCategories, accounts ->
             val (start, end) = f.dateRange
             val query = f.query.trim()
             val isQueryBlank = query.isBlank()
@@ -122,13 +123,17 @@ class TransactionsViewModel(
                     )
                 }
 
-            val availableCategories = listOf("All") + transactions.map { it.category }
-                .filter { it.isNotBlank() }
+            val availableCategories = (listOf("All") +
+                    transactions.map { it.category } +
+                    customCategories.map { it.name }
+                    ).filter { it.isNotBlank() }
                 .distinct()
                 .sorted()
 
-            val availableAccounts = listOf("All") + transactions.map { it.accountHint }
-                .filter { it.isNotBlank() }
+            val availableAccounts = (listOf("All") +
+                    transactions.map { it.accountHint } +
+                    accounts.map { it.name }
+                    ).filter { it.isNotBlank() }
                 .distinct()
                 .sorted()
 
@@ -192,7 +197,8 @@ class TransactionsViewModel(
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     val repository = TransactionRepository(
                         database.smsTransactionDao(),
-                        database.customCategoryDao()
+                        database.customCategoryDao(),
+                        database.accountDao()
                     )
                     return TransactionsViewModel(repository) as T
                 }

@@ -388,7 +388,8 @@ class AnalyticsViewModel(
                     return AnalyticsViewModel(
                         TransactionRepository(
                             database.smsTransactionDao(),
-                            database.customCategoryDao()
+                            database.customCategoryDao(),
+                            database.accountDao()
                         )
                     ) as T
                 }

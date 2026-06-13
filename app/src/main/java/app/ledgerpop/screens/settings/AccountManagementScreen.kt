@@ -57,7 +57,6 @@ fun AccountManagementScreen(
                 "Accounts",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             IconButton(onClick = { showAddDialog = true }) {
@@ -167,10 +166,9 @@ fun AccountManagementScreen(
 fun SectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(vertical = 8.dp),
-        fontWeight = FontWeight.Bold
+        modifier = Modifier.padding(vertical = 8.dp)
     )
 }
 
@@ -218,12 +216,12 @@ fun AccountRow(
                 Spacer(Modifier.width(12.dp))
                 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(account.name, fontWeight = FontWeight.SemiBold)
+                    Text(account.name)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(account.type.lowercase().replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (aliases.isNotEmpty()) {
                             Text(" • ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("${aliases.size} linked", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            Text("${aliases.size} linked", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -276,7 +274,7 @@ fun AccountRow(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Linked Duplicates / Aliases:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Bold)
+                    Text("Linked Duplicates / Aliases:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     aliases.forEach { alias ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Link, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)

@@ -106,7 +106,6 @@ fun CategoryManagementScreen(
                 "Categories",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
             IconButton(onClick = { showAddDialog = true }) {
@@ -225,7 +224,7 @@ fun CategoryRow(
             
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(name, fontWeight = FontWeight.SemiBold)
+                    Text(name)
                     if (!isStandard) {
                         Spacer(Modifier.width(8.dp))
                         Surface(
@@ -237,8 +236,7 @@ fun CategoryRow(
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                fontWeight = FontWeight.Bold
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                         }
                     }

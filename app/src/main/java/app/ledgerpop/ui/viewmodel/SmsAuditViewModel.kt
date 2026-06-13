@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.data.parser.SmsParser
 import app.ledgerpop.ui.state.AuditFilter
 import app.ledgerpop.ui.state.SmsAuditUiState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,22 +156,21 @@ class SmsAuditViewModel(
                     }
                 }
                 "FALSE_NEGATIVE" -> {
-                    // Insert the skipped message as a manual transaction
-                    val fallbackAmount = if (entry.parsedAmount > 0) entry.parsedAmount else 0.0
-                    val fallbackType = if (entry.parsedType.isNotBlank()) entry.parsedType else "DEBIT"
+                    // Re-parse the skipped message even if it looks like spam
+                    val parsed = SmsParser.parse(entry.sender, entry.body, ignoreSpamCheck = true)
 
                     val newTxn = SmsTransactionEntity(
                         sender = entry.sender,
                         body = entry.body,
-                        amount = fallbackAmount,
-                        type = fallbackType,
-                        merchant = "Manual Recovery",
-                        category = "Uncategorized",
-                        bank = "Unknown",
-                        accountHint = "Recovery",
+                        amount = parsed?.amount ?: 0.0,
+                        type = parsed?.type ?: "DEBIT",
+                        merchant = parsed?.merchant ?: "Manual Recovery",
+                        category = parsed?.category ?: "Uncategorized",
+                        bank = parsed?.bank ?: "Unknown Bank",
+                        accountHint = parsed?.accountName ?: "Recovery",
                         transactionTime = entry.timestamp,
                         hashKey = entry.hashKey,
-                        isBillable = true
+                        isBillable = parsed?.includeInAnalytics ?: true
                     )
                     transactionDao.insert(newTxn)
                 }

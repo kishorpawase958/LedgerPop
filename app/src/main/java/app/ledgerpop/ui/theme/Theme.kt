@@ -7,10 +7,12 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import app.ledgerpop.ui.state.AppTheme
@@ -106,16 +108,35 @@ private val LightColors = lightColorScheme(
     error               = ErrorRed,
 )
 
+private val MidnightColors = darkColorScheme(
+    primary             = MidnightPrimary,
+    onPrimary           = Color(0xFF002B75),
+    primaryContainer    = Color(0xFF003FA4),
+    onPrimaryContainer  = Color(0xFFDBE1FF),
+    secondary           = MidnightSecondary,
+    onSecondary         = Color(0xFF1E2737),
+    tertiary            = MidnightTertiary,
+    onTertiary          = Color(0xFF00344B),
+    background          = BackgroundMidnight,
+    onBackground        = Color(0xFFE2E2E6),
+    surface             = SurfaceMidnight,
+    onSurface           = Color(0xFFE2E2E6),
+    surfaceVariant      = SurfaceVariantMidnight,
+    onSurfaceVariant    = Color(0xFFC3C7CF),
+    outline             = Color(0xFF8D9199),
+    error               = ErrorRed,
+)
+
 @Composable
 fun LedgerPopTheme(
     appTheme: AppTheme = AppTheme.AUTO,
     content: @Composable () -> Unit
 ) {
-    val targetColorScheme = when {
-        appTheme == AppTheme.DARK -> DarkColors
-        appTheme == AppTheme.LIGHT -> LightColors
-        isSystemInDarkTheme() -> DarkColors
-        else -> LightColors
+    val targetColorScheme = when (appTheme) {
+        AppTheme.DARK -> DarkColors
+        AppTheme.LIGHT -> LightColors
+        AppTheme.MIDNIGHT -> MidnightColors
+        AppTheme.AUTO -> if (isSystemInDarkTheme()) DarkColors else LightColors
     }
 
     val colorScheme = animateColorScheme(targetColorScheme)

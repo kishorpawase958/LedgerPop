@@ -1,5 +1,6 @@
 package app.ledgerpop.data.repository
 
+import app.ledgerpop.data.local.AccountDao
 import app.ledgerpop.data.local.CustomCategoryDao
 import app.ledgerpop.data.local.SmsTransactionDao
 import app.ledgerpop.data.local.SmsTransactionEntity
@@ -7,7 +8,8 @@ import kotlinx.coroutines.flow.Flow
 
 class TransactionRepository(
     private val dao: SmsTransactionDao,
-    private val categoryDao: CustomCategoryDao
+    private val categoryDao: CustomCategoryDao,
+    private val accountDao: AccountDao
 ) {
     fun getAllTransactions(): Flow<List<SmsTransactionEntity>> = dao.getAllTransactions()
 
@@ -25,6 +27,8 @@ class TransactionRepository(
     suspend fun insert(txn: SmsTransactionEntity) = dao.insert(txn)
 
     fun getAllCustomCategories() = categoryDao.getAllCategories()
+    
+    fun getAllAccounts() = accountDao.getAllAccounts()
 
     fun getLinkedCredits(debitId: Int): Flow<List<SmsTransactionEntity>> = dao.getLinkedCredits(debitId)
 

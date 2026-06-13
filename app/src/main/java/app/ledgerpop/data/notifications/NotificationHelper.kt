@@ -13,6 +13,7 @@ import app.ledgerpop.MainActivity
 import app.ledgerpop.R
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.utils.AmountUtils
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -41,7 +42,7 @@ object NotificationHelper {
 
         val isDebit = txn.type == "DEBIT"
         val amountSign = if (isDebit) "-" else "+"
-        val amountText = "$amountSign₹${"%.0f".format(txn.amount)}"
+        val amountText = "$amountSign₹${AmountUtils.formatAmount(txn.amount)}"
         val logType = if (isDebit) "Expense Logged" else "Income Logged"
         val emoji = CategoryEngine.emoji(txn.category)
 

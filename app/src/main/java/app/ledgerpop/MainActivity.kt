@@ -144,7 +144,17 @@ fun LedgerPopApp(
 
     LaunchedEffect(pendingTransactionId) {
         if (pendingTransactionId != null) {
-            navController.navigate(Screen.Transactions.createRoute(pendingTransactionId))
+            navController.navigate(Screen.Transactions.createRoute(pendingTransactionId)) {
+                // Pop up to the start destination to avoid building up a large stack
+                // and to ensure 'Home' is the base.
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                // Avoid multiple copies of the same destination when re-launching from notification
+                launchSingleTop = true
+                // Restore state if we were already on Transactions but with different arguments
+                restoreState = true
+            }
             onTransactionHandled()
         }
     }
@@ -178,7 +188,7 @@ fun LedgerPopApp(
                     composable(Screen.Home.route) {
                         HomeScreen(
                             onNavigateToTransactions = {
-                                navController.navigate(Screen.Transactions.route) {
+                                navController.navigate(Screen.Transactions.createRoute()) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
                                     }
@@ -197,7 +207,12 @@ fun LedgerPopApp(
                         })
                     ) { backStackEntry ->
                         val transactionId = backStackEntry.arguments?.getInt("id") ?: -1
-                        TransactionsScreen(initialTransactionId = if (transactionId != -1) transactionId else null)
+                        TransactionsScreen(
+                            initialTransactionId = if (transactionId != -1) transactionId else null,
+                            onClearInitialId = {
+                                backStackEntry.arguments?.putInt("id", -1)
+                            }
+                        )
                     }
 
                     composable(Screen.Analytics.route) {
@@ -303,7 +318,8 @@ fun LedgerPopApp(
                                         .clip(RoundedCornerShape(16.dp))
                                         .clickable {
                                             if (!selected) {
-                                                navController.navigate(item.screen.route) {
+                                                val route = if (item.screen == Screen.Transactions) Screen.Transactions.createRoute() else item.screen.route
+                                                navController.navigate(route) {
                                                     popUpTo(navController.graph.findStartDestination().id) {
                                                         saveState = true
                                                     }

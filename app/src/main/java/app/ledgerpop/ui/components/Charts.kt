@@ -22,6 +22,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.ui.state.TrendSummary
+import app.ledgerpop.ui.theme.MidnightPrimary
+import app.ledgerpop.ui.theme.Purple700
 
 @Composable
 fun ScrollableBarChart(
@@ -32,7 +34,11 @@ fun ScrollableBarChart(
     val density = LocalDensity.current
     val surfaceColor = MaterialTheme.colorScheme.surface
     val creditColor = Color(0xFF00B894)
-    val debitColor = Color(0xFF9C27B0) // Purple
+    val debitColor = if (MaterialTheme.colorScheme.primary == MidnightPrimary) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        Color(0xFF9C27B0) // Keep original purple for other themes
+    }
 
     val itemWidth = 52.dp
     val spacing = 16.dp

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -79,9 +80,11 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionSheet
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
+import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.viewmodel.CategoryAggregate
 import app.ledgerpop.ui.viewmodel.HomeViewModel
+import app.ledgerpop.utils.AmountUtils
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
@@ -98,6 +101,8 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(db, context))
     val uiState by viewModel.uiState.collectAsState()
+    val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
+    val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
     val hazeState = remember { HazeState() }
 
     val customCategories by produceState(initialValue = emptyList<CustomCategoryEntity>()) {
@@ -191,17 +196,18 @@ fun HomeScreen(
             }
 
 
-            // ── Recent / Top Transactions
+            // ── Recent Transactions
             item {
                 SectionHeader(
-                    title = "Top Transactions",
+                    title = "Recent Transactions",
                     action = "View All",
                     onActionClick = onNavigateToTransactions
                 )
             }
 
-            if (uiState.topTransactions.isNotEmpty()) {
-                items(uiState.topTransactions) { txn ->
+            val recentTransactions = uiState.recentTransactions.take(3)
+            if (recentTransactions.isNotEmpty()) {
+                items(recentTransactions) { txn ->
                     HomeTransactionRow(
                         txn = txn,
                         customCategories = customCategories,
@@ -221,7 +227,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 135.dp),
-            containerColor = Purple700,
+            containerColor = accentColor,
             contentColor = Color.White,
             shape = RoundedCornerShape(18.dp)
         ) {
@@ -274,6 +280,14 @@ fun HomeScreen(
             onDelete = { toDelete ->
                 viewModel.deleteTransaction(toDelete)
                 selectedTxn = null
+            },
+            onNavigateToTransaction = { id ->
+                scope.launch {
+                    val target = db.smsTransactionDao().getById(id)
+                    if (target != null) {
+                        selectedTxn = target
+                    }
+                }
             }
         )
     }
@@ -310,7 +324,6 @@ private fun HomeHeader(userName: String) {
             Text(
                 text = "Monthly Overview, $currentMonthYear",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
@@ -333,12 +346,11 @@ private fun SectionHeader(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
         )
         if (action != null) {
             TextButton(onClick = onActionClick) {
-                Text(action, fontWeight = FontWeight.SemiBold)
+                Text(action)
             }
         }
     }
@@ -374,15 +386,13 @@ private fun InsightCard(emoji: String, title: String, message: String) {
             Column(verticalArrangement = Arrangement.Center) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
                     letterSpacing = 0.5.sp
                 )
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 14.sp
@@ -431,8 +441,7 @@ private fun CategoryCompactCard(
             ) {
                 Text(
                     text = aggregate.category.uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 0.5.sp,
                     maxLines = 1,
@@ -441,7 +450,6 @@ private fun CategoryCompactCard(
                 Text(
                     text = "₹${formatAmount(aggregate.amount)}",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -599,7 +607,6 @@ private fun BalanceRingCard(
                         Text(
                             text = formatAmount(kotlin.math.abs(totalBalance)),
                             style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.ExtraBold,
                             color = if (totalBalance < 0) redColor else MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -622,7 +629,6 @@ private fun BalanceRingCard(
                         Text(
                             "₹${formatAmount(totalIncome)}",
                             style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
                             color = Color(0xFF00B894)
                         )
                     }
@@ -636,7 +642,6 @@ private fun BalanceRingCard(
                         Text(
                             "₹${formatAmount(totalExpense)}",
                             style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -651,7 +656,6 @@ private fun BalanceRingCard(
                             Text(
                                 if (monthlyBudget > 0) "₹${formatAmount(monthlyBudget)}" else "Not Set",
                                 style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             IconButton(
@@ -730,8 +734,7 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
             Column(Modifier.weight(1f)) {
                 Text(
                     "VS LAST MONTH",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 1.sp
                 )
@@ -750,7 +753,6 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
                     Text(
                         text = "${if (isUp) "+" else ""}$diff%",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
                         color = if (isUp) Color(0xFFD63031) else Color(0xFF00B894)
                     )
                 }
@@ -760,7 +762,6 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
                 Text(
                     "₹${formatAmount(lastMonth)}",
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
@@ -835,11 +836,27 @@ private fun HomeTransactionRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (txn.note.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = txn.note.take(50),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "${if (txn.amount < 0) "−" else ""}₹${"%,.0f".format(kotlin.math.abs(txn.amount))}",
+                text = "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Normal,
                 color = if (isBillable) amountColor
@@ -851,6 +868,29 @@ private fun HomeTransactionRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
+            } else if (txn.originalAmount != null) {
+                Text(
+                    text = "₹${AmountUtils.formatAmount(txn.originalAmount)}",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    ),
+                    color = MaterialTheme.colorScheme.outline
+                )
+            } else if (!isDebit && txn.linkedTransactionId != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Rounded.Link,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text(
+                        text = "Linked",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
@@ -873,7 +913,7 @@ private fun EmptyTransactionsPlaceholder() {
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "No major transactions yet",
+                "No transactions yet",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -894,12 +934,7 @@ private fun greeting(userName: String): String {
 }
 
 private fun formatAmount(amount: Double): String {
-    val absAmt = kotlin.math.abs(amount)
-    return when {
-        absAmt >= 100_000 -> "${"%.1f".format(absAmt / 100_000)}L"
-        absAmt >= 1_000   -> "${"%.1f".format(absAmt / 1_000)}K"
-        else              -> "%,.0f".format(absAmt)
-    }
+    return AmountUtils.formatAmount(amount)
 }
 
 
@@ -933,8 +968,7 @@ fun QuickCategoryUpdateDialog(
         title = {
             Text(
                 text = "Change Category",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleLarge
             )
         },
         text = {

@@ -18,24 +18,24 @@ object SmsParser {
 
     private val amountPatterns = listOf(
         // Prefer INR Equivalent for international transactions
-        Regex("""(?:Inr Equiv Approx|Inr Equiv|Equiv\.? INR)\s*(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
-        Regex("""(?:INR|Rs\.?|₹)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
-        Regex("""(?:debited by|debited from|credited by|credited to|credited with|payment of|spent on|spent|spend|paid from|for|of|withdrawn at)\s*(?:INR|Rs\.?|₹)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
+        Regex("""(?:Inr Equiv Approx|Inr Equiv|Equiv\.? INR)\s*(?:INR|Rs\.?|₹|Rs:)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
+        Regex("""(?:INR|Rs\.?|₹|Rs:)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
+        Regex("""(?:debited by|debited from|debited for|credited by|credited to|credited with|credited for|payment of|spent on|spent|spend|paid from|for|of|withdrawn at)\s*(?:INR|Rs\.?|₹|Rs:)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
     )
 
-    private val debitKeywords = listOf("debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of")
+    private val debitKeywords = listOf("debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
     private val creditKeywords = listOf("credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
-    private val spamKeywords = listOf("otp","one time password","Reminder","cooling period","generated", "request", "require", "allot", "disburse", "declined", "failed", "unsuccessful", "insufficient", "will be", "due")
+    private val spamKeywords = listOf("otp is", "otp for", "is your otp", "one time password for", "Reminder","cooling period","generated", "request", "require", "allot", "disburse", "declined", "failed", "unsuccessful", "insufficient", "will be", "due")
 
-    fun parse(sender: String, body: String): ParsedSmsTransaction? {
+    fun parse(sender: String, body: String, ignoreSpamCheck: Boolean = false): ParsedSmsTransaction? {
         val text = body.replace("\n", " ").replace(Regex("""\s+"""), " ").trim()
         val lower = text.lowercase(Locale.getDefault())
 
         // Filter out spam or non-transactional messages
-        if (spamKeywords.any { lower.contains(it) }) return null
+        if (!ignoreSpamCheck && spamKeywords.any { lower.contains(it) }) return null
 
-        val amount = extractAmount(text) ?: return null
-        val type = detectType(text) ?: return null
+        val amount = extractAmount(text) ?: if (ignoreSpamCheck) 0.0 else return null
+        val type = detectType(text) ?: if (ignoreSpamCheck) "DEBIT" else return null
 
         // Extract Account Data
         val accountLast4 = extractAccountLast4(text)
@@ -45,26 +45,23 @@ object SmsParser {
         val cleanBankName = bankName.split("\\s+".toRegex()).asSequence().take(3).joinToString(" ")
         val accountName = if (accountLast4.isNotBlank()) "$cleanBankName ($accountLast4)" else cleanBankName
 
-        // Extract Merchant Name (Max 3 words, fallback to "Unknown" or "Account Credit")
-        var merchant = extractMerchant(text, type)
+        // Extract Merchant Name (Max 4 words, fallback to "Unknown" or "Account Credit")
+        val merchant = extractMerchant(text)
 
         // Identify credit card bill payments (repayments) to exclude them from analytics (avoid double counting).
-        val isRepayment = (merchant == "UPI funds transfer" || merchant == "Account Credit") &&
-            lower.contains("credit card") &&
-            (lower.contains("towards") || lower.contains("for your") || lower.contains("payment") || lower.contains("received") || lower.contains("successful"))
+        val isRepayment = lower.contains("credit card") && (
+            lower.contains("bill") ||
+            lower.contains("towards") ||
+            lower.contains("repayment") ||
+            lower.contains("received") ||
+            lower.contains("successful") ||
+            (lower.contains("payment") && (lower.contains("for") || lower.contains("to")))
+        )
 
-        // Fallback: If merchant is not found (UPI funds transfer/Account Credit), try to find UPI Ref No.
-        if (merchant == "UPI funds transfer" || merchant == "Account Credit") {
-            val upiRef = extractUpiRef(text)
-            if (upiRef != null) {
-                merchant = "UPI $upiRef"
-            }
-        }
-
-        val cleanMerchant = if (merchant == "UPI funds transfer" || (merchant == "Account Credit")) {
+        val cleanMerchant = if (merchant == "UPI funds transfer" || merchant.startsWith("Vehicle no.")) {
             merchant
         } else {
-            merchant.split("\\s+".toRegex()).asSequence().take(3).joinToString(" ")
+            merchant.split("\\s+".toRegex()).asSequence().take(4).joinToString(" ")
         }
 
         // Auto-categorize based on the clean merchant and body
@@ -91,19 +88,6 @@ object SmsParser {
         return null
     }
 
-    private fun extractUpiRef(text: String): String? {
-        val patterns = listOf(
-            Regex("""(?i)(?:UPI\s*ref\s*no\.?|Ref\s*no\.?|UPI\s*Ref)\s*([0-9]{8,14})"""),
-            Regex("""(?i)UPI/([0-9]{8,14})""")
-        )
-        for (pattern in patterns) {
-            val match = pattern.find(text)
-            val ref = match?.groupValues?.getOrNull(1)
-            if (!ref.isNullOrBlank()) return ref
-        }
-        return null
-    }
-
     private fun detectType(text: String): String? {
         val lower = text.lowercase(Locale.getDefault())
         val hasDebit = debitKeywords.any { lower.contains(it) }
@@ -122,62 +106,87 @@ object SmsParser {
         }
     }
 
-    private fun extractMerchant(text: String, type: String): String {
+    private fun extractMerchant(text: String): String {
         // Stop words that indicate the end of a merchant name and the start of transaction details.
-        // We avoid very short words like 'is' or 'at' here as they often appear in names (e.g., Ashish).
-        val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for|card|a/c|under|chk|your)\b|\s+\.|\.\s+|\.$|$)"""
+        val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))\.\s*|$)"""
+        val mChars = """A-Za-z0-9\s.&'/\-@*,"""
 
         val patterns = listOf(
+            // SBI / Other banks "Transferred to"
+            Regex("""(?i)Transferred to\s+([$mChars]{2,40}?)$lookahead"""),
+
+            // Union Bank "by [Merchant] ref no"
+            Regex("""(?i)by\s+([$mChars]{2,40}?)\s+ref\s+no"""),
+
             // Specific formats to handle them as a single block before lookahead stops them
-            Regex("""(?i)for\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at)\s+([A-Za-z0-9\s.&'/-]{2,40}?)$lookahead"""),
+            Regex("""(?i)(?:for|towards)\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at|subscription\s+at)\s+([$mChars]{2,40}?)$lookahead"""),
 
             // 4: by [METHOD] from [Merchant]
-            Regex("""(?i)by\s+[A-Za-z0-9]+\s+from\s+([A-Za-z0-9\s.&'/-]{2,40}?)$lookahead"""),
+            Regex("""(?i)by\s+[A-Za-z0-9]+\s+from\s+([$mChars]{2,40}?)$lookahead"""),
 
             // 7: spent at [Merchant]
-            Regex("""(?i)spent\s+at\s+([A-Za-z0-9\s.&'/-]{2,40}?)$lookahead"""),
+            Regex("""(?i)spent\s+at\s+([$mChars]{2,40}?)$lookahead"""),
 
             // Handle "trf to [Merchant]" specifically as it often ends with "Refno"
-            Regex("""(?i)trf to\s+([A-Za-z0-9\s.&'/-]{2,40}?)(?=\s+(?:Refno|Ref|on|at|for|via|$|\.))"""),
+            Regex("""(?i)trf to\s+([$mChars]{2,40}?)(?=\s+(?:Refno|Ref|on|at|for|via|$|\.))"""),
 
-            // New pattern for "IST [Merchant]" format (common in some multi-line SMS)
-            Regex("""(?i)IST\s+([A-Za-z0-9\s.&'-]{2,40}?)$lookahead"""),
+            // New pattern for "IST [Merchant]" format (avoiding time like 10:30)
+            Regex("""(?i)IST\s+(?!\d{1,2}:\d{2})\s*([$mChars]{2,40}?)$lookahead"""),
 
-            // Pattern for Axis Bank "Info - " format and similar descriptors
-            Regex("""(?i)(?:Info\s*-\s*|Info:\s*)([A-Za-z0-9\s.&'/-]{2,40}?)$lookahead"""),
+            // General pattern with expanded prefixes.
+            Regex("""(?i)(?:at(?!\s+your\b)|to|info\s*vpa|paid\s*to|sent\s*to|towards|transfer\s+from|trf\s+from|for|from(?!\s+(?:your|a/c|acct|my|sbi|hdfc|icici|axis|kotak|pnb|boi|idfc|indus|canara|union|rbl|fed|idbi|citi|scb|hsbc|bank)\b)|by)\s+([$mChars]{2,40}?)$lookahead"""),
 
-            // General pattern with expanded prefixes. Negative lookahead to avoid capturing "at your", "from A/c"
-            Regex("""(?i)(?:at(?!\s+your\b)|to|info\s*vpa|paid\s*to|sent\s*to|towards|transfer\s+from|trf\s+from|for|from(?!\s+(?:your|a/c|acct|my)\b))\s+([A-Za-z0-9\s.&'/-]{2,40}?)$lookahead"""),
+            // Specifically handle Info- and Info: which may or may not have a space after the separator
+            Regex("""(?i)(?:Info\s*-\s*|Info:\s*)\s*([$mChars]{2,40}?)$lookahead"""),
 
-            Regex("""(?i)paid from your .+ to\s+([A-Za-z0-9\s.&'/-]{2,40}?)$lookahead"""),
-            Regex("""(?i)trf to\s+([A-Za-z0-9\s.&'/-]{2,40}?)(?:\s+Refno|\.|$)""")
+            Regex("""(?i)paid from your .+ to\s+([$mChars]{2,40}?)$lookahead"""),
+            Regex("""(?i)trf to\s+([$mChars]{2,40}?)(?:\s+Refno|\.|$)""")
         )
 
-        for (pattern in patterns) {
-            val match = pattern.find(text)
-            val merchant = match?.groupValues?.getOrNull(1)?.trim()
+        val candidates = mutableListOf<Pair<Int, String>>()
 
-            if (!merchant.isNullOrBlank() && merchant.length > 2) {
-                // Sanity check: Ensure we didn't accidentally capture bank jargon or currency
-                val lower = merchant.lowercase()
-                if (lower.startsWith("your") || lower.contains("card") || lower.contains("account") || 
-                    lower.startsWith("rs") || lower.startsWith("inr") || lower.contains("a/c")) {
-                    continue
+        for (pattern in patterns) {
+            pattern.findAll(text).forEach { match ->
+                val merchant = match.groupValues.getOrNull(1)?.trim()
+                if (!merchant.isNullOrBlank() && merchant.length > 2) {
+                    val lower = merchant.lowercase()
+                    // Sanity check: Ensure we didn't accidentally capture bank jargon, currency, or time
+                    val junkWords = setOf("payment", "transaction", "txn", "transfer", "spent", "paid", "debited", "credited")
+                    val banks = setOf("sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "idfc", "indus", "canara", "union", "rbl", "fed", "idbi", "citi", "scb", "hsbc")
+
+                    val isJunk = (lower.contains("card") && !lower.contains("credit card")) ||
+                                 lower.startsWith("your") ||
+                                 lower.contains("account") || lower.startsWith("rs") ||
+                                 lower.startsWith("inr") || lower.contains("a/c") ||
+                                 merchant.matches(Regex("""\d{1,2}:\d{2}""")) ||
+                                 (lower.contains("bank") && !lower.contains("atm") && !lower.contains("cc")) ||
+                                 junkWords.contains(lower) || banks.contains(lower)
+
+                    if (!isJunk) {
+                        candidates.add(match.range.first to merchant)
+                    }
                 }
-                // Filter out generic bank names unless it's an ATM
-                if (lower.contains("bank") && !lower.contains("atm")) {
-                    continue
-                }
-                return merchant
             }
         }
 
-        return if (type == "DEBIT") "UPI funds transfer" else "Account Credit"
+        // Return the one that appears first in the text
+        if (candidates.isNotEmpty()) {
+            return candidates.minByOrNull { it.first }?.second ?: "UPI funds transfer"
+        }
+
+        // Fallback for FASTag if no merchant was found in the text
+        if (text.contains("FASTag", ignoreCase = true) && text.contains("vehicle no.", ignoreCase = true)) {
+            val vMatch = Regex("""(?i)vehicle no\.\s*([A-Z0-9]{5,15})""").find(text)
+            val vNo = vMatch?.groupValues?.getOrNull(1)
+            if (vNo != null) return "Vehicle no. $vNo"
+        }
+
+        return "UPI funds transfer"
     }
 
     private fun extractAccountLast4(text: String): String {
         val patterns = listOf(
-            Regex("""(?i)(?:a/c|ac|account|card|ending(?: in)?|no\.?|xx|\*\*)\s*x*-?\s*(\d{4})(?!\d)"""),
+            Regex("""(?i)(?:a/c|ac|account|card|ending(?: in)?|no\.?|xx|\*\*)\s*[*xX\d-]*?(\d{4})(?!\d)"""),
             Regex("""XX(\d{4})""", RegexOption.IGNORE_CASE),
             Regex("""\*\*(\d{4})""", RegexOption.IGNORE_CASE)
         )
@@ -198,6 +207,7 @@ object SmsParser {
             s.contains("HDFC") || t.contains("HDFC") -> "HDFC Bank"
             s.contains("ICICI") || t.contains("ICICI") -> "ICICI Bank"
             s.contains("AXIS") || t.contains("AXIS BANK") -> "Axis Bank"
+            s.contains("UBI") || t.contains("UNION BANK") -> "Union Bank"
             s.contains("CSB") || t.contains("CSB") -> "Edge CSB Bank"
             s.contains("SIB") || t.contains("SOUTH INDIAN") -> "SIB"
             s.contains("JUPITR") || t.contains("JUPITER") -> "Jupiter"

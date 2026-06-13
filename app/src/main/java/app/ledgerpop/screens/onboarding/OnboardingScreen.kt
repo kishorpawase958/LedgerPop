@@ -78,7 +78,6 @@ fun OnboardingScreen(
             Text(
                 text = "Welcome to LedgerPop",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
 
@@ -88,7 +87,6 @@ fun OnboardingScreen(
                 text = "Track your finances effortlessly",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
 
@@ -118,8 +116,7 @@ fun OnboardingScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Permission Request",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -165,8 +162,7 @@ fun OnboardingScreen(
             ) {
                 Text(
                     "Continue & Grant Permissions",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleMedium
                 )
             }
 

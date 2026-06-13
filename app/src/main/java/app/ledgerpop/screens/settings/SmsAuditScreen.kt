@@ -31,6 +31,7 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.ui.state.AuditFilter
 import app.ledgerpop.ui.viewmodel.SmsAuditViewModel
+import app.ledgerpop.utils.AmountUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,7 +79,6 @@ fun SmsAuditScreen(onBack: () -> Unit) {
             Text(
                 "SMS Audit Log",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
@@ -309,7 +309,6 @@ private fun AuditEntryCard(
                 Text(
                     text = entry.sender,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -355,7 +354,6 @@ private fun AuditEntryCard(
                 Text(
                     text = entry.status.replace("_", " "),
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
                     color = statusColor
                 )
                 // Show parsed amount if imported
@@ -365,9 +363,8 @@ private fun AuditEntryCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${entry.parsedType} ₹${String.format(locale, "%,.0f", entry.parsedAmount)}",
+                        text = "${entry.parsedType} ₹${AmountUtils.formatAmount(entry.parsedAmount)}",
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
                         color = if (entry.parsedType == "CREDIT")
                             Color(0xFF00B894)
                         else
@@ -521,8 +518,7 @@ private fun ReportDialog(
         title = {
             Text(
                 "Report SMS",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleLarge
             )
         },
         text = {
@@ -531,7 +527,6 @@ private fun ReportDialog(
                 Text(
                     text = entry.sender,
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -553,8 +548,7 @@ private fun ReportDialog(
 
                 Text(
                     "What's wrong with this?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                    style = MaterialTheme.typography.bodyMedium
                 )
 
                 // False positive button
@@ -579,8 +573,7 @@ private fun ReportDialog(
                     Column {
                         Text(
                             "Wrongly imported",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.labelLarge
                         )
                         Text(
                             "This is not a real transaction",
@@ -611,8 +604,7 @@ private fun ReportDialog(
                     Column {
                         Text(
                             "Wrongly skipped",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.labelLarge
                         )
                         Text(
                             "This IS a real transaction",
@@ -661,7 +653,6 @@ private fun StatChip(label: String, count: Int, color: Color) {
             Text(
                 text = "$count",
                 style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
                 color = color
             )
             Text(

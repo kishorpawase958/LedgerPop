@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -90,7 +89,6 @@ fun PermissionsScreen(onBack: () -> Unit) {
             Text(
                 "Permissions",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
@@ -183,7 +181,10 @@ fun PermissionsScreen(onBack: () -> Unit) {
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(10.dp))
-                        Text("Privacy Protection", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Privacy Protection",
+                            style = MaterialTheme.typography.titleMedium
+                        )
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -242,7 +243,10 @@ private fun PermissionCard(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(title, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium
+                    )
                     Text(status, color = if (granted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(4.dp))
                     Text(desc, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)

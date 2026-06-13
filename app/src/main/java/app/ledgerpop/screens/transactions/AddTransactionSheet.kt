@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -26,6 +25,7 @@ import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -156,8 +156,7 @@ fun AddTransactionSheet(
                 }
                 Text(
                     "Add Transaction",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Button(
                     onClick = {
@@ -225,8 +224,7 @@ fun AddTransactionSheet(
                 Text(
                     text = accountHint.ifBlank { "Unspecified Account" },
                     style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 
                 Spacer(Modifier.height(16.dp))
@@ -240,25 +238,27 @@ fun AddTransactionSheet(
                     Text(
                         text = "₹",
                         style = MaterialTheme.typography.displayMedium,
-                        color = if (amountError) MaterialTheme.colorScheme.error else amountColor,
-                        fontWeight = FontWeight.Bold
+                        color = if (amountError) MaterialTheme.colorScheme.error else amountColor
                     )
                     Spacer(Modifier.width(4.dp))
                     BasicTextField(
                         value = amount,
-                        onValueChange = { 
-                            val filtered = it.filter { c -> c.isDigit() || c == '.' }
-                            if (filtered.length <= 12) {
-                                amount = filtered
-                                amountError = false
+                        onValueChange = { input ->
+                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            if (filtered.count { it == '.' } <= 1) {
+                                val afterDecimal = filtered.substringAfter(".", "")
+                                if (afterDecimal.length <= 2 && filtered.length <= 12) {
+                                    amount = filtered
+                                    amountError = false
+                                }
                             }
                         },
                         textStyle = MaterialTheme.typography.displayLarge.copy(
-                            fontWeight = FontWeight.Black,
                             color = if (amountError) MaterialTheme.colorScheme.error else amountColor,
                             textAlign = TextAlign.Start
                         ),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        visualTransformation = AmountUtils.indianCurrencyTransformation,
                         singleLine = true,
                         modifier = Modifier.width(IntrinsicSize.Min).defaultMinSize(minWidth = 20.dp),
                         decorationBox = { innerTextField ->
@@ -266,7 +266,6 @@ fun AddTransactionSheet(
                                 Text(
                                     text = "0",
                                     style = MaterialTheme.typography.displayLarge.copy(
-                                        fontWeight = FontWeight.Black,
                                         color = (if (amountError) MaterialTheme.colorScheme.error else amountColor).copy(alpha = 0.3f)
                                     )
                                 )
@@ -346,7 +345,7 @@ fun AddTransactionSheet(
                         Icon(Icons.Rounded.CalendarToday, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         Column {
                             Text("Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Text(dateStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(dateStr, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -363,7 +362,7 @@ fun AddTransactionSheet(
                         Icon(Icons.Rounded.Schedule, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                         Column {
                             Text("Time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Text(timeStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(timeStr, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -407,7 +406,7 @@ fun AddTransactionSheet(
                             tint = if (isBillable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                         )
                         Column {
-                            Text("Include in Analytics", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Include in Analytics", style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 if (isBillable) "Counted in totals & analytics" else "Excluded from totals & analytics",
                                 style = MaterialTheme.typography.labelSmall,
@@ -496,15 +495,25 @@ fun AddTransactionSheet(
             onSelect = { category = it },
             onDismiss = { showCategoryPicker = false },
             customCategories = customCategories,
-            onUpdateEmoji = { name, emoji ->
+            onAdd = { name ->
                 scope.launch {
-                    val existing = db.customCategoryDao().getByName(name)
+                    db.customCategoryDao().insert(
+                        CustomCategoryEntity(name = name, type = if (isExpense) "DEBIT" else "CREDIT")
+                    )
+                }
+            },
+            onUpdate = { oldName, newName, emoji ->
+                scope.launch {
+                    val existing = db.customCategoryDao().getByName(oldName)
                     if (existing != null) {
-                        db.customCategoryDao().insert(existing.copy(emoji = emoji))
+                        db.customCategoryDao().insert(existing.copy(name = newName, emoji = emoji))
                     } else {
                         db.customCategoryDao().insert(
-                            CustomCategoryEntity(name = name, type = if (isExpense) "DEBIT" else "CREDIT", emoji = emoji)
+                            CustomCategoryEntity(name = newName, type = if (isExpense) "DEBIT" else "CREDIT", emoji = emoji)
                         )
+                    }
+                    if (oldName != newName) {
+                        db.smsTransactionDao().updateCategoryName(oldName, newName)
                     }
                 }
             }
@@ -519,13 +528,21 @@ fun AddTransactionSheet(
             onSelect = { accountHint = it },
             onDismiss = { showAccountPicker = false },
             accounts = accounts,
-            onUpdateEmoji = { name, icon ->
+            onAdd = { name ->
                 scope.launch {
-                    val existing = db.accountDao().getByName(name)
+                    db.accountDao().insert(AccountEntity(name = name))
+                }
+            },
+            onUpdate = { oldName, newName, icon ->
+                scope.launch {
+                    val existing = db.accountDao().getByName(oldName)
                     if (existing != null) {
-                        db.accountDao().insert(existing.copy(icon = icon))
+                        db.accountDao().insert(existing.copy(name = newName, icon = icon))
                     } else {
-                        db.accountDao().insert(AccountEntity(name = name, icon = icon))
+                        db.accountDao().insert(AccountEntity(name = newName, icon = icon))
+                    }
+                    if (oldName != newName) {
+                        db.smsTransactionDao().updateAccountName(oldName, newName)
                     }
                 }
             }

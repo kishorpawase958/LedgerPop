@@ -15,13 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -32,7 +32,9 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
 import app.ledgerpop.ui.components.ScrollableBarChart
+import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
+import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -40,7 +42,8 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
-    initialTransactionId: Int? = null
+    initialTransactionId: Int? = null,
+    onClearInitialId: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
@@ -49,6 +52,8 @@ fun TransactionsScreen(
         factory = TransactionsViewModel.factory(db)
     )
     val uiState by viewModel.uiState.collectAsState()
+    val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
+    val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
     val filtered = uiState.filteredTransactions
 
     var selectedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
@@ -56,13 +61,19 @@ fun TransactionsScreen(
     var showAddSheet by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
 
+    // Track which ID was last handled to avoid re-opening on tab switches
+    var lastHandledId by rememberSaveable { mutableIntStateOf(-1) }
+
     // Auto-select transaction if initialTransactionId is provided
     LaunchedEffect(initialTransactionId) {
-        if (initialTransactionId != null) {
+        if (initialTransactionId != null && initialTransactionId != -1 && (initialTransactionId != lastHandledId)) {
             val txn = db.smsTransactionDao().getById(initialTransactionId)
             if (txn != null) {
                 selectedTxn = txn
+                lastHandledId = initialTransactionId
             }
+            // Clear the ID from the navigation arguments as a backup
+            onClearInitialId()
         }
     }
 
@@ -90,7 +101,6 @@ fun TransactionsScreen(
                 Text(
                     text = "Transactions",
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
 
@@ -274,7 +284,6 @@ fun TransactionsScreen(
                             Text(
                                 text = "Monthly Trend",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)
                             )
                             ScrollableBarChart(
@@ -308,7 +317,7 @@ fun TransactionsScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 135.dp),
-            containerColor = Purple700,
+            containerColor = accentColor,
             contentColor = Color.White,
             shape = RoundedCornerShape(18.dp)
         ) {
@@ -488,7 +497,6 @@ private fun TransactionRow(
                 Text(
                     text = txn.merchant.ifBlank { txn.sender },
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -532,20 +540,35 @@ private fun TransactionRow(
                     )
                 }
             }
+            if (txn.note.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = txn.note.take(50),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
 
         // Amount
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "${if (txn.amount < 0) "−" else ""}₹${String.format(locale, "%,.0f", kotlin.math.abs(txn.amount))}",
+                text = "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}",
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
                 color = if (isBillable) amountColor
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (txn.originalAmount != null) {
                 Text(
-                    text = "₹${String.format(locale, "%,.0f", txn.originalAmount)}",
+                    text = "₹${AmountUtils.formatAmount(txn.originalAmount)}",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),
@@ -599,8 +622,7 @@ fun QuickCategoryUpdateDialog(
         title = {
             Text(
                 text = "Update Category",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleLarge
             )
         },
         text = {

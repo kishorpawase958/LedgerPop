@@ -45,7 +45,11 @@ class TransactionDetailViewModel(
             object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                     TransactionDetailViewModel(
-                        TransactionRepository(database.smsTransactionDao(), database.customCategoryDao())
+                        TransactionRepository(
+                            database.smsTransactionDao(),
+                            database.customCategoryDao(),
+                            database.accountDao()
+                        )
                     ) as T
             }
     }
