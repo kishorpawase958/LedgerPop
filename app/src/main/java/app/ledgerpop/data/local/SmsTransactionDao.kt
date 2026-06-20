@@ -96,6 +96,9 @@ interface SmsTransactionDao {
     @Query("UPDATE sms_transactions SET category = :category WHERE id IN (:ids)")
     suspend fun updateCategoryForIds(ids: List<Int>, category: String)
 
+    @Query("UPDATE sms_transactions SET merchant = :merchant WHERE id IN (:ids)")
+    suspend fun updateMerchantForIds(ids: List<Int>, merchant: String)
+
     @Query("UPDATE sms_transactions SET category = :category, merchant = :merchant WHERE id IN (:ids)")
     suspend fun updateMerchantAndCategoryForIds(ids: List<Int>, merchant: String, category: String)
 }

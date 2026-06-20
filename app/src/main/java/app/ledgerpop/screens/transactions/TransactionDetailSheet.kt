@@ -693,9 +693,13 @@ fun TransactionDetailSheet(
                 onSave(pendingSavedTxn!!)
                 showBulkUpdateDialog = false
             },
-            onApply = { selectedIds ->
+            onApply = { selectedIds, updateMerchant, updateCategory ->
                 scope.launch {
-                    db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                    when {
+                        updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                        updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
+                        updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                    }
                     onSave(pendingSavedTxn!!)
                     showBulkUpdateDialog = false
                 }

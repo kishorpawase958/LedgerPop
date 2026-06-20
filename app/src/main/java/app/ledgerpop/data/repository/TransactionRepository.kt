@@ -28,10 +28,14 @@ class TransactionRepository(
 
     suspend fun getSimilarTransactions(merchant: String, excludeId: Int) = dao.getSimilarTransactions(merchant, excludeId)
 
-    suspend fun updateCategoryForIds(ids: List<Int>, category: String) = dao.updateCategoryForIds(ids, category)
-
     suspend fun updateMerchantAndCategoryForIds(ids: List<Int>, merchant: String, category: String) = 
         dao.updateMerchantAndCategoryForIds(ids, merchant, category)
+
+    suspend fun updateMerchantForIds(ids: List<Int>, merchant: String) = 
+        dao.updateMerchantForIds(ids, merchant)
+
+    suspend fun updateCategoryForIds(ids: List<Int>, category: String) = 
+        dao.updateCategoryForIds(ids, category)
 
     fun getAllCustomCategories() = categoryDao.getAllCategories()
     

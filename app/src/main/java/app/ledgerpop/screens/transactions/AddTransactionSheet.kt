@@ -579,9 +579,13 @@ fun AddTransactionSheet(
                 showBulkUpdateDialog = false
                 onDismiss()
             },
-            onApply = { selectedIds ->
+            onApply = { selectedIds, updateMerchant, updateCategory ->
                 scope.launch {
-                    db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                    when {
+                        updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                        updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
+                        updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                    }
                     onAdd(pendingAddedTxn!!)
                     showBulkUpdateDialog = false
                     onDismiss()

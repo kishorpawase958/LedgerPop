@@ -829,9 +829,13 @@ fun QuickCategoryUpdateDialog(
                 onSave(pendingSavedTxn!!)
                 showBulkUpdateDialog = false
             },
-            onApply = { selectedIds ->
+            onApply = { selectedIds, updateMerchant, updateCategory ->
                 scope.launch {
-                    db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                    when {
+                        updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, txn.merchant, selectedCategory)
+                        updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, txn.merchant)
+                        updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                    }
                     onSave(pendingSavedTxn!!)
                     showBulkUpdateDialog = false
                 }

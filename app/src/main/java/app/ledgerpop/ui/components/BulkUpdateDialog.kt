@@ -25,9 +25,11 @@ fun BulkUpdateDialog(
     newCategory: String,
     similarTransactions: List<SmsTransactionEntity>,
     onDismiss: () -> Unit,
-    onApply: (List<Int>) -> Unit
+    onApply: (List<Int>, Boolean, Boolean) -> Unit
 ) {
     var selectedIds by remember { mutableStateOf(similarTransactions.map { it.id }.toSet()) }
+    var updateMerchant by remember { mutableStateOf(true) }
+    var updateCategory by remember { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -44,7 +46,49 @@ fun BulkUpdateDialog(
         text = {
             Column {
                 Text(
-                    text = "Apply \"$newMerchantName\" and \"$newCategory\" to selected items:",
+                    text = "Select updates to be made:",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = updateMerchant,
+                        onCheckedChange = { updateMerchant = it }
+                    )
+                    Text(
+                        text = "Merchant name: \"$newMerchantName\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = updateCategory,
+                        onCheckedChange = { updateCategory = it }
+                    )
+                    Text(
+                        text = "Category: \"$newCategory\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                Text(
+                    text = "Apply to selected items:",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
@@ -110,8 +154,8 @@ fun BulkUpdateDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onApply(selectedIds.toList()) },
-                enabled = selectedIds.isNotEmpty()
+                onClick = { onApply(selectedIds.toList(), updateMerchant, updateCategory) },
+                enabled = selectedIds.isNotEmpty() && (updateMerchant || updateCategory)
             ) {
                 Text("Update ${selectedIds.size} items")
             }
