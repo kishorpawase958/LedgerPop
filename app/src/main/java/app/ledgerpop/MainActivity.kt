@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -91,13 +90,6 @@ class MainActivity : ComponentActivity() {
     private var pendingTransactionId by mutableStateOf<Int?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val sharedPrefs = getSharedPreferences("ledgerpop_prefs", MODE_PRIVATE)
-        when (sharedPrefs.getString("app_theme", "AUTO")) {
-            "DARK" -> setTheme(R.style.Theme_App_Starting_Dark)
-            "LIGHT" -> setTheme(R.style.Theme_App_Starting_Light)
-            else -> {} // Use default Theme.App.Starting from manifest
-        }
-        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 

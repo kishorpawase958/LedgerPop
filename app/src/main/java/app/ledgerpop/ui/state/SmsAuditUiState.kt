@@ -25,5 +25,12 @@ data class SmsAuditUiState(
     // Detail expand — id of currently expanded SMS body
     val expandedEntryId: Int? = null,
 
+    // Retroactive correction
+    val showSimilarEntriesDialog: Boolean = false,
+    val showClearSimilarDialog: Boolean = false,
+    val similarEntries: List<SmsAuditEntity> = emptyList(),
+    val selectedSimilarIds: Set<Int> = emptySet(),
+    val retroactiveReportType: String = "",
+
     val isLoading: Boolean = true
 )

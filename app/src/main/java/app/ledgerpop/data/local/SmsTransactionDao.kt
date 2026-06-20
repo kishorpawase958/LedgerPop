@@ -84,4 +84,18 @@ interface SmsTransactionDao {
         ORDER BY transactionTime DESC LIMIT 1
     """)
     suspend fun getLastCategoryForMerchantFuzzy(merchant: String): String?
+
+    @Query("""
+        SELECT * FROM sms_transactions 
+        WHERE (merchant = :merchant COLLATE NOCASE OR :merchant LIKE merchant || '%' OR merchant LIKE :merchant || '%')
+        AND id != :excludeId
+        ORDER BY transactionTime DESC
+    """)
+    suspend fun getSimilarTransactions(merchant: String, excludeId: Int): List<SmsTransactionEntity>
+
+    @Query("UPDATE sms_transactions SET category = :category WHERE id IN (:ids)")
+    suspend fun updateCategoryForIds(ids: List<Int>, category: String)
+
+    @Query("UPDATE sms_transactions SET category = :category, merchant = :merchant WHERE id IN (:ids)")
+    suspend fun updateMerchantAndCategoryForIds(ids: List<Int>, merchant: String, category: String)
 }

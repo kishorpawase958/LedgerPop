@@ -25,6 +25,7 @@ import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.ui.components.BulkUpdateDialog
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -121,6 +122,10 @@ fun AddTransactionSheet(
     var showTimePicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showAccountPicker by remember { mutableStateOf(false) }
+    
+    var showBulkUpdateDialog by remember { mutableStateOf(false) }
+    var similarTxnsToUpdate by remember { mutableStateOf<List<SmsTransactionEntity>>(emptyList()) }
+    var pendingAddedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
     val dateStr = remember(selectedDateMillis) {
         SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(Date(selectedDateMillis))
@@ -165,23 +170,38 @@ fun AddTransactionSheet(
                             amountError = true
                             return@Button
                         }
-                        onAdd(
-                            SmsTransactionEntity(
-                                sender = "Manual",
-                                body = "Manually added transaction",
-                                amount = parsed,
-                                type = if (isExpense) "DEBIT" else "CREDIT",
-                                merchant = merchant.trim(),
-                                category = category.trim().ifBlank { "Manual" },
-                                bank = "Manual",
-                                accountHint = accountHint.trim(),
-                                transactionTime = selectedDateMillis,
-                                hashKey = UUID.randomUUID().toString(),
-                                isBillable = isBillable,
-                                note = note.trim()
-                            )
+                        val newTxn = SmsTransactionEntity(
+                            sender = "Manual",
+                            body = "Manually added transaction",
+                            amount = parsed,
+                            type = if (isExpense) "DEBIT" else "CREDIT",
+                            merchant = merchant.trim(),
+                            category = category.trim().ifBlank { "Manual" },
+                            bank = "Manual",
+                            accountHint = accountHint.trim(),
+                            transactionTime = selectedDateMillis,
+                            hashKey = UUID.randomUUID().toString(),
+                            isBillable = isBillable,
+                            note = note.trim()
                         )
-                        onDismiss()
+
+                        if (merchant.trim().length >= 3) {
+                            scope.launch {
+                                val similar = db.smsTransactionDao().getSimilarTransactions(merchant.trim(), -1)
+                                val filtered = similar.filter { it.category != category.trim() }
+                                if (filtered.isNotEmpty()) {
+                                    pendingAddedTxn = newTxn
+                                    similarTxnsToUpdate = filtered
+                                    showBulkUpdateDialog = true
+                                } else {
+                                    onAdd(newTxn)
+                                    onDismiss()
+                                }
+                            }
+                        } else {
+                            onAdd(newTxn)
+                            onDismiss()
+                        }
                     },
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
@@ -544,6 +564,27 @@ fun AddTransactionSheet(
                     if (oldName != newName) {
                         db.smsTransactionDao().updateAccountName(oldName, newName)
                     }
+                }
+            }
+        )
+    }
+
+    if (showBulkUpdateDialog && pendingAddedTxn != null) {
+        BulkUpdateDialog(
+            newMerchantName = merchant,
+            newCategory = category,
+            similarTransactions = similarTxnsToUpdate,
+            onDismiss = {
+                onAdd(pendingAddedTxn!!)
+                showBulkUpdateDialog = false
+                onDismiss()
+            },
+            onApply = { selectedIds ->
+                scope.launch {
+                    db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                    onAdd(pendingAddedTxn!!)
+                    showBulkUpdateDialog = false
+                    onDismiss()
                 }
             }
         )

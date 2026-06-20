@@ -7,11 +7,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -28,12 +28,23 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.ui.components.ScrollableBarChart
+import app.ledgerpop.ui.components.SpeedDialFab
+import app.ledgerpop.ui.components.SpeedDialAction
+import app.ledgerpop.ui.components.FloatingFilterPopup
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.Category
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.Close
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.theme.Purple500
@@ -81,6 +92,10 @@ fun AnalyticsScreen() {
     val scope = rememberCoroutineScope()
     val viewModel: AnalyticsViewModel = viewModel(factory = AnalyticsViewModel.factory(db))
     val uiState by viewModel.uiState.collectAsState()
+    val listState = rememberLazyListState()
+    val showScrollToTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 2 }
+    }
     
     val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
     val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
@@ -88,13 +103,22 @@ fun AnalyticsScreen() {
 
     val drillDownData by viewModel.drillDownTransactions.collectAsState()
     val drillDownTitle by viewModel.drillDownTitle.collectAsState()
+    val density = LocalDensity.current
+    
+    // FAB and Action Offsets (Matching SpeedDialFab layout)
+    // To align next to the main FAB '+', we use the FAB's vertical center as our anchor
+    val fabCenterYOffset = with(density) { (-(135 + 28)).dp.roundToPx() }
+    val popupYOffset = fabCenterYOffset
 
     val selectedTxnState = remember { mutableStateOf<SmsTransactionEntity?>(null) }
     val quickCategoryTxnState = remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
-    val showFiltersState = remember { mutableStateOf(false) }
     val showDatePickerState = remember { mutableStateOf(false) }
     val isBreakdownExpanded = remember { mutableStateOf(false) }
+
+    var isFabExpanded by remember { mutableStateOf(false) }
+    var showAccountFilterPopup by remember { mutableStateOf(false) }
+    var showCategoryFilterPopup by remember { mutableStateOf(false) }
 
     if (uiState.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -105,17 +129,18 @@ fun AnalyticsScreen() {
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 220.dp)
         ) {
-            // ── Header & Filter Toggle ────────────────────────────────────────
+            // ── Header ───────────────────────────────────────────────────────
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -124,204 +149,41 @@ fun AnalyticsScreen() {
                         style = MaterialTheme.typography.headlineLarge,
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    IconButton(
-                        onClick = { showFiltersState.value = !showFiltersState.value },
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = if (showFiltersState.value || uiState.startDateMillis != null || uiState.selectedCategory != "All" || uiState.selectedAccount != "All")
-                                MaterialTheme.colorScheme.primaryContainer
-                            else Color.Transparent
-                        )
+
+                    // Small filter status row
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Rounded.FilterList,
-                            contentDescription = "Filters",
-                            tint = if (showFiltersState.value || uiState.startDateMillis != null)
-                                MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // ── Expandable Filter Section ─────────────────────────────────────
-            item {
-                AnimatedVisibility(
-                    visible = showFiltersState.value,
-                    enter = expandVertically(),
-                    exit = shrinkVertically()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Filters",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            TextButton(
-                                onClick = { viewModel.clearFilters() },
-                                contentPadding = PaddingValues(horizontal = 8.dp)
-                            ) {
-                                Text("Reset All", style = MaterialTheme.typography.labelMedium)
-                            }
+                        if (uiState.selectedAccount != "All") {
+                            FilterStatusChip(uiState.selectedAccount) { viewModel.setAccountFilter("All") }
                         }
-
-                        // Date Range Card
-                        Surface(
-                            onClick = { showDatePickerState.value = true },
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            border = null,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.CalendarToday,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                Spacer(Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        "Time Period",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    val dateText = remember(uiState.startDateMillis, uiState.endDateMillis, locale) {
-                                        if (uiState.startDateMillis != null && uiState.endDateMillis != null) {
-                                            val sdf = SimpleDateFormat("dd MMM", locale)
-                                            "${sdf.format(Date(uiState.startDateMillis!!))} - ${sdf.format(Date(uiState.endDateMillis!!))}"
-                                        } else "All Time"
-                                    }
-                                    Text(
-                                        dateText,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                }
-                                Spacer(Modifier.weight(1f))
-                                Icon(
-                                    Icons.Rounded.ChevronRight,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
+                        if (uiState.selectedCategory != "All") {
+                            FilterStatusChip(uiState.selectedCategory) { viewModel.setCategoryFilter("All") }
                         }
-
-                        // Account Selector
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "Account",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                uiState.availableAccounts.drop(1).forEach { acc ->
-                                    val isSelected = uiState.selectedAccount == acc
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { viewModel.setAccountFilter(acc) },
-                                        label = { Text(acc) },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            containerColor = MaterialTheme.colorScheme.surface,
-                                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        border = null,
-                                        leadingIcon = if (isSelected) {
-                                            { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
-                                        } else null
-                                    )
-                                }
-                            }
-                        }
-
-                        // Category Selector
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "Category",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                uiState.availableCategories.drop(1).forEach { cat ->
-                                    val isSelected = uiState.selectedCategory == cat
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { viewModel.setCategoryFilter(cat) },
-                                        label = { Text(cat) },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            containerColor = MaterialTheme.colorScheme.surface,
-                                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        border = null,
-                                        leadingIcon = if (isSelected) {
-                                            { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
-                                        } else null
-                                    )
-                                }
-                            }
+                        if (uiState.startDateMillis != null) {
+                            FilterStatusChip("Date") { viewModel.setDateRange(null, null) }
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
             }
 
             // ── KPIs (Clickable) ──────────────────────────────────────────────
             item {
-                val incomeText = remember(uiState.totalIncome) {
-                    "${if (uiState.totalIncome < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.totalIncome)}"
-                }
-                val expenseText = remember(uiState.totalExpense) {
-                    "${if (uiState.totalExpense < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.totalExpense)}"
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     KpiCard(
                         label = "Income",
-                        value = incomeText,
+                        value = AmountUtils.formatWithCurrency(uiState.totalIncome),
                         color = Color(0xFF00B894),
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.openDrillDown(DrillDownType.Income) }
                     )
                     KpiCard(
                         label = "Expenses",
-                        value = expenseText,
+                        value = AmountUtils.formatWithCurrency(uiState.totalExpense),
                         color = accentLight,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.openDrillDown(DrillDownType.Expense) }
@@ -331,27 +193,18 @@ fun AnalyticsScreen() {
             }
 
             item {
-                val netText = remember(uiState.net) {
-                    "${if (uiState.net < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.net)}"
-                }
                 val netColor = when {
                     uiState.net > 0 -> Color(0xFF00B894)
                     uiState.net < 0 -> MaterialTheme.colorScheme.error
                     else -> Color.White
                 }
-                val avgDebitText = remember(uiState.avgDebit) {
-                    "${if (uiState.avgDebit < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.avgDebit)}"
-                }
-                val avgCreditText = remember(uiState.avgCredit) {
-                    "${if (uiState.avgCredit < 0) "−" else ""}₹${AmountUtils.formatAmount(uiState.avgCredit)}"
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    KpiCard("Net", netText, netColor, Modifier.weight(1f))
-                    KpiCard("Avg Credit", avgCreditText, Color(0xFF00B894), Modifier.weight(1f))
-                    KpiCard("Avg Debit", avgDebitText, color = accentLight, Modifier.weight(1f))
+                    KpiCard("Net", AmountUtils.formatWithCurrency(uiState.net), netColor, Modifier.weight(1f))
+                    KpiCard("Avg Credit", AmountUtils.formatWithCurrency(uiState.avgCredit), Color(0xFF00B894), Modifier.weight(1f))
+                    KpiCard("Avg Debit", AmountUtils.formatWithCurrency(uiState.avgDebit), color = accentLight, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -519,22 +372,83 @@ fun AnalyticsScreen() {
             }
         }
 
-        // ── Export FAB ────────────────────────────────────────────────────────
-        FloatingActionButton(
-            onClick = { viewModel.exportToCsv(context) },
+        // ── Scroll to Top Button ──────────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = showScrollToTop,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 135.dp),
-            containerColor = accentColor,
-            contentColor = Color.White,
-            shape = RoundedCornerShape(18.dp)
+                .padding(end = 24.dp, bottom = 210.dp)
+                .width(56.dp)
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Download,
-                contentDescription = "Export",
-                modifier = Modifier.size(28.dp)
-            )
+            Box(contentAlignment = Alignment.Center) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        scope.launch { listState.animateScrollToItem(0) }
+                    },
+                    containerColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700,
+                    contentColor = Color.White,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Scroll to top", modifier = Modifier.size(20.dp))
+                }
+            }
         }
+
+        // ── SpeedDial FAB ─────────────────────────────────────────────────────────────
+        SpeedDialFab(
+            isExpanded = isFabExpanded,
+            onExpandedChange = { isFabExpanded = it },
+            actions = listOf(
+                SpeedDialAction(
+                    icon = Icons.Rounded.Download,
+                    label = "Export",
+                    onClick = { viewModel.exportToCsv(context) }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.DateRange,
+                    label = "Date",
+                    onClick = { showDatePickerState.value = true }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.AccountBalanceWallet,
+                    label = "Account",
+                    onClick = { showAccountFilterPopup = true }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.Category,
+                    label = "Category",
+                    onClick = { showCategoryFilterPopup = true }
+                )
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 135.dp)
+        )
+    }
+
+    if (showAccountFilterPopup) {
+        FloatingFilterPopup(
+            title = "Filter Account",
+            options = uiState.availableAccounts,
+            selected = uiState.selectedAccount,
+            onSelect = { viewModel.setAccountFilter(it) },
+            onDismiss = { showAccountFilterPopup = false },
+            yOffset = popupYOffset
+        )
+    }
+
+    if (showCategoryFilterPopup) {
+        FloatingFilterPopup(
+            title = "Filter Category",
+            options = uiState.availableCategories,
+            selected = uiState.selectedCategory,
+            onSelect = { viewModel.setCategoryFilter(it) },
+            onDismiss = { showCategoryFilterPopup = false },
+            emojiProvider = { CategoryEngine.emoji(it, uiState.customCategories) },
+            yOffset = popupYOffset
+        )
     }
 
     // ── Drill Down Bottom Sheet ───────────────────────────────────────────────
@@ -580,25 +494,43 @@ fun AnalyticsScreen() {
                         }
                     }
 
+                    val monthHeaderFormatter = remember(locale) { SimpleDateFormat("MMMM yyyy", locale) }
+                    val groupedDrillDown = remember(data, monthHeaderFormatter) {
+                        data.groupBy { monthHeaderFormatter.format(Date(it.transactionTime)) }
+                    }
+
                     LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                        items(
-                            items = data,
-                            key = { it.id }
-                        ) { txn ->
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                            ) {
-                                TransactionRowCompact(
-                                    txn = txn,
-                                    customCategories = uiState.customCategories,
-                                    linkedAmount = linkedAmounts[txn.id] ?: 0.0,
-                                    hasCreditLinks = txn.linkedTransactionId != null,
-                                    onClick = { selectedTxnState.value = txn },
-                                    onCategoryClick = { quickCategoryTxnState.value = txn }
+                        groupedDrillDown.forEach { (month, transactions) ->
+                            item(key = month) {
+                                Text(
+                                    text = month,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(horizontal = 20.dp)
+                                        .padding(top = 16.dp, bottom = 8.dp)
                                 )
+                            }
+
+                            items(
+                                items = transactions,
+                                key = { it.id }
+                            ) { txn ->
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                ) {
+                                    TransactionRowCompact(
+                                        txn = txn,
+                                        customCategories = uiState.customCategories,
+                                        linkedAmount = linkedAmounts[txn.id] ?: 0.0,
+                                        hasCreditLinks = txn.linkedTransactionId != null,
+                                        onClick = { selectedTxnState.value = txn },
+                                        onCategoryClick = { quickCategoryTxnState.value = txn }
+                                    )
+                                }
                             }
                         }
                     }
@@ -695,7 +627,39 @@ fun AnalyticsScreen() {
     }
 }
 
-// ── Donut Chart Component ────────────────────────────────────────────────────
+@Composable
+private fun FilterStatusChip(
+    text: String,
+    onClear: () -> Unit
+) {
+    Surface(
+        onClick = onClear,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.height(32.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 80.dp)
+            )
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Clear",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
 
 @Composable
 private fun CategoryDonutChart(
@@ -784,11 +748,8 @@ private fun CategoryDonutChart(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             val totalAmount = remember(summaries) { summaries.sumOf { it.amount } }
-                            val formattedTotal = remember(totalAmount) {
-                                "${if (totalAmount < 0) "−" else ""}₹${AmountUtils.formatAmount(totalAmount)}"
-                            }
                             Text(
-                                text = formattedTotal,
+                                text = AmountUtils.formatWithCurrency(totalAmount),
                                 style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -915,10 +876,6 @@ private fun CategoryRow(
     else
         "of income"
 
-    val formattedAmount = remember(summary.amount) {
-        "${if (summary.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(summary.amount)}"
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -933,7 +890,7 @@ private fun CategoryRow(
             Column(modifier = Modifier.weight(1f)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(summary.category, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    Text(formattedAmount, style = MaterialTheme.typography.bodyMedium, color = amountColor)
+                    Text(AmountUtils.formatWithCurrency(summary.amount), style = MaterialTheme.typography.bodyMedium, color = amountColor)
                 }
                 Spacer(Modifier.height(6.dp))
                 Box(modifier = Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))) {
@@ -1039,20 +996,14 @@ private fun TransactionRowCompact(
         }
 
         Column(horizontalAlignment = Alignment.End) {
-            val formattedAmount = remember(txn.amount) {
-                "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}"
-            }
             Text(
-                text = formattedAmount,
+                text = AmountUtils.formatWithCurrency(txn.amount),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (isBillable) amountColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (txn.originalAmount != null) {
-                val formattedOriginal = remember(txn.originalAmount) {
-                    "₹${AmountUtils.formatAmount(txn.originalAmount)}"
-                }
                 Text(
-                    text = formattedOriginal,
+                    text = AmountUtils.formatWithCurrency(txn.originalAmount),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),

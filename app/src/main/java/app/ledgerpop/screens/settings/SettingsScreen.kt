@@ -8,6 +8,7 @@ import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -30,8 +32,17 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.Painter
+import app.ledgerpop.R
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.ui.state.AppTheme
+import app.ledgerpop.ui.state.AppLogo
+import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -117,6 +128,7 @@ fun SettingsScreen(
 
     var showNameDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showLogoDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showFullScanConfirmDialog by remember { mutableStateOf(false) }
 
@@ -150,7 +162,9 @@ fun SettingsScreen(
 
         PreferencesSection(
             appTheme = uiState.appTheme,
+            appLogo = uiState.appLogo,
             onThemeClick = { showThemeDialog = true },
+            onLogoClick = { showLogoDialog = true },
             onPermissionsClick = onNavigateToPermissions,
             onCategoriesClick = onNavigateToCategories,
             onAccountsClick = onNavigateToAccounts
@@ -207,6 +221,18 @@ fun SettingsScreen(
                 restartApp(context)
             },
             onDismiss = { showThemeDialog = false }
+        )
+    }
+
+    if (showLogoDialog) {
+        LogoSelectionDialog(
+            currentLogo = uiState.appLogo,
+            onLogoSelected = {
+                viewModel.updateAppLogo(it)
+
+                restartApp(context)
+            },
+            onDismiss = { showLogoDialog = false }
         )
     }
 
@@ -289,7 +315,9 @@ private fun ProfileSection(userName: String, onClick: () -> Unit) {
 @Composable
 private fun PreferencesSection(
     appTheme: AppTheme,
+    appLogo: AppLogo,
     onThemeClick: () -> Unit,
+    onLogoClick: () -> Unit,
     onPermissionsClick: () -> Unit,
     onCategoriesClick: () -> Unit,
     onAccountsClick: () -> Unit
@@ -303,6 +331,15 @@ private fun PreferencesSection(
                     subtitle = appTheme.name.lowercase().replaceFirstChar { it.uppercase() }
                 )
             }
+            
+            MiniCard(onClick = onLogoClick) {
+                SettingRow(
+                    icon = Icons.Rounded.AppShortcut,
+                    title = "App Logo",
+                    subtitle = appLogo.name.lowercase().replaceFirstChar { it.uppercase() }
+                )
+            }
+
             MiniCard(onClick = onAccountsClick) {
                 SettingRow(
                     icon = Icons.Rounded.AccountBalance,
@@ -513,6 +550,129 @@ private fun AboutSection() {
                 lineHeight = 18.sp
             )
         }
+    }
+}
+
+@Composable
+private fun LogoSelectionDialog(
+    currentLogo: AppLogo,
+    onLogoSelected: (AppLogo) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose App Logo") },
+        containerColor = MaterialTheme.colorScheme.surface,
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LogoSelectionItem(
+                        name = "Default",
+                        logo = AppLogo.DEFAULT,
+                        isSelected = currentLogo == AppLogo.DEFAULT,
+                        onSelect = { onLogoSelected(AppLogo.DEFAULT) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    LogoSelectionItem(
+                        name = "Light",
+                        logo = AppLogo.LIGHT,
+                        isSelected = currentLogo == AppLogo.LIGHT,
+                        onSelect = { onLogoSelected(AppLogo.LIGHT) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    LogoSelectionItem(
+                        name = "Dark",
+                        logo = AppLogo.DARK,
+                        isSelected = currentLogo == AppLogo.DARK,
+                        onSelect = { onLogoSelected(AppLogo.DARK) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    LogoSelectionItem(
+                        name = "Navy",
+                        logo = AppLogo.NAVY,
+                        isSelected = currentLogo == AppLogo.NAVY,
+                        onSelect = { onLogoSelected(AppLogo.NAVY) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+        shape = RoundedCornerShape(28.dp)
+    )
+}
+
+@Composable
+private fun LogoSelectionItem(
+    name: String,
+    logo: AppLogo,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val logoRes = when (logo) {
+        AppLogo.LIGHT -> R.mipmap.ic_launcher_light
+        AppLogo.DARK -> R.mipmap.ic_launcher_dark
+        AppLogo.NAVY -> R.mipmap.ic_launcher_navy
+        else -> R.mipmap.ic_launcher
+    }
+
+    val painter = remember(logoRes) {
+        val drawable = ContextCompat.getDrawable(context, logoRes)
+        val bitmap = Bitmap.createBitmap(
+            drawable!!.intrinsicWidth.coerceAtLeast(1),
+            drawable.intrinsicHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        BitmapPainter(bitmap.asImageBitmap())
+    }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                else Color.Transparent
+            )
+            .clickable { onSelect() }
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        androidx.compose.foundation.Image(
+            painter = painter,
+            contentDescription = name,
+            modifier = Modifier
+                .size(64.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .border(
+                    if (isSelected) 2.dp else 1.dp,
+                    if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
+                    RoundedCornerShape(14.dp)
+                )
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

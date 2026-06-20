@@ -13,9 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SmsAuditEntity::class,
         CustomCategoryEntity::class,
         AccountEntity::class,
-        AccountAliasEntity::class
+        AccountAliasEntity::class,
+        SmartRuleEntity::class
     ],
-    version = 9, // bumped from 8
+    version = 10, // bumped from 9
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -25,6 +26,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun customCategoryDao(): CustomCategoryDao
     abstract fun accountDao(): AccountDao
     abstract fun accountAliasDao(): AccountAliasDao
+    abstract fun smartRuleDao(): SmartRuleDao
 
     companion object {
         private val MIGRATION_8_9 = object : Migration(8, 9) {

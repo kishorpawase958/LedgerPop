@@ -57,6 +57,29 @@ fun SmsAuditScreen(onBack: () -> Unit) {
         )
     }
 
+    // Similar entries dialog (Retroactive correction)
+    if (uiState.showSimilarEntriesDialog) {
+        SimilarEntriesDialog(
+            entries = uiState.similarEntries,
+            selectedIds = uiState.selectedSimilarIds,
+            reportType = uiState.retroactiveReportType,
+            onToggleSelection = { viewModel.toggleSimilarSelection(it) },
+            onConfirm = { viewModel.applyRetroactiveCorrections() },
+            onDismiss = { viewModel.hideSimilarEntriesDialog() }
+        )
+    }
+
+    // Clear reports dialog (Batch clear)
+    if (uiState.showClearSimilarDialog) {
+        ClearSimilarDialog(
+            entries = uiState.similarEntries,
+            selectedIds = uiState.selectedSimilarIds,
+            onToggleSelection = { viewModel.toggleSimilarSelection(it) },
+            onConfirm = { viewModel.applyBatchClear() },
+            onDismiss = { viewModel.hideClearSimilarDialog() }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -637,6 +660,91 @@ private fun ReportDialog(
     )
 }
 
+// ── Clear Similar Dialog ────────────────────────────────────────────────────
+
+@Composable
+private fun ClearSimilarDialog(
+    entries: List<SmsAuditEntity>,
+    selectedIds: Set<Int>,
+    onToggleSelection: (Int) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val locale = LocalConfiguration.current.locales[0]
+    val sdf = remember(locale) { SimpleDateFormat("d MMM, h:mm a", locale) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                "Clear similar reports?",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "We found ${entries.size} other messages with the same structure that were also reported. Clear reports for them too?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    items(entries) { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggleSelection(entry.id) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = selectedIds.contains(entry.id),
+                                onCheckedChange = { onToggleSelection(entry.id) }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = sdf.format(Date(entry.timestamp)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = entry.body.take(80) + if (entry.body.length > 80) "…" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Clear ${selectedIds.size + 1} reports")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Just this one")
+            }
+        }
+    )
+}
+
 // ── Stat Chip ─────────────────────────────────────────────────────────────────
 
 @Composable
@@ -662,4 +770,90 @@ private fun StatChip(label: String, count: Int, color: Color) {
             )
         }
     }
+}
+
+// ── Similar Entries Dialog ──────────────────────────────────────────────────
+
+@Composable
+private fun SimilarEntriesDialog(
+    entries: List<SmsAuditEntity>,
+    selectedIds: Set<Int>,
+    reportType: String,
+    onToggleSelection: (Int) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val locale = LocalConfiguration.current.locales[0]
+    val sdf = remember(locale) { SimpleDateFormat("d MMM, h:mm a", locale) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                "Apply to historical messages?",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "We found ${entries.size} other messages with the same structure from ${entries.firstOrNull()?.sender}. Apply the same correction to them?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    items(entries) { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggleSelection(entry.id) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = selectedIds.contains(entry.id),
+                                onCheckedChange = { onToggleSelection(entry.id) }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = sdf.format(Date(entry.timestamp)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = entry.body.take(80) + if (entry.body.length > 80) "…" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Apply to ${selectedIds.size} messages")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Skip")
+            }
+        }
+    )
 }

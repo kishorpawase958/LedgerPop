@@ -80,6 +80,7 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionSheet
 import app.ledgerpop.screens.transactions.TransactionDetailSheet
+import app.ledgerpop.ui.components.BulkUpdateDialog
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.viewmodel.CategoryAggregate
@@ -147,6 +148,7 @@ fun HomeScreen(
                     totalIncome = uiState.thisMonthIncome,
                     totalExpense = uiState.thisMonthExpense,
                     monthlyBudget = uiState.monthlyBudget,
+                    accentColor = accentColor,
                     onUpdateBudget = { viewModel.updateBudget(it) }
                 )
             }
@@ -463,6 +465,7 @@ private fun BalanceRingCard(
     totalIncome: Double,
     totalExpense: Double,
     monthlyBudget: Double,
+    accentColor: Color,
     onUpdateBudget: (Double) -> Unit
 ) {
     var started by remember { mutableStateOf(false) }
@@ -477,7 +480,6 @@ private fun BalanceRingCard(
         label = "spend_sweep"
     )
 
-    val purpleColor = Color(0xFF9C27B0)
     val redColor = Color(0xFFD63031)
     val surfaceColor = MaterialTheme.colorScheme.surface
     var showBudgetDialog by remember { mutableStateOf(false) }
@@ -491,7 +493,7 @@ private fun BalanceRingCard(
         tonalElevation = 2.dp,
         border = BorderStroke(
             1.dp,
-            purpleColor.copy(alpha = 0.5f)
+            accentColor.copy(alpha = 0.5f)
         )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -527,9 +529,9 @@ private fun BalanceRingCard(
 
                             // 2. Spend Progress
                             if (animatedSweep <= 360f) {
-                                // Within budget: Purple arc
+                                // Within budget: accentColor arc
                                 drawArc(
-                                    color = purpleColor,
+                                    color = accentColor,
                                     startAngle = startAngle,
                                     sweepAngle = animatedSweep,
                                     useCenter = false,
@@ -538,9 +540,9 @@ private fun BalanceRingCard(
                                     style = Stroke(strokeWidth, cap = StrokeCap.Round)
                                 )
                             } else {
-                                // Over budget: Full purple ring + Red overflow
+                                // Over budget: Full accentColor ring + Red overflow
                                 drawArc(
-                                    color = purpleColor,
+                                    color = accentColor,
                                     startAngle = startAngle,
                                     sweepAngle = 360f,
                                     useCenter = false,
@@ -590,7 +592,7 @@ private fun BalanceRingCard(
                                     center = Offset(sx, sy)
                                 )
                                 drawCircle(
-                                    color = if (animatedSweep > 360f) redColor else purpleColor,
+                                    color = if (animatedSweep > 360f) redColor else accentColor,
                                     radius = 4.dp.toPx(),
                                     center = Offset(sx, sy)
                                 )
@@ -605,10 +607,10 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = formatAmount(kotlin.math.abs(totalBalance)),
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = if (totalBalance < 0) redColor else MaterialTheme.colorScheme.onSurface
-                        )
+                    text = AmountUtils.formatAmount(totalBalance),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = if (totalBalance < 0) redColor else MaterialTheme.colorScheme.onSurface
+                )
                     }
                 }
 
@@ -627,7 +629,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "₹${formatAmount(totalIncome)}",
+                            AmountUtils.formatWithCurrency(totalIncome),
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color(0xFF00B894)
                         )
@@ -640,7 +642,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "₹${formatAmount(totalExpense)}",
+                            AmountUtils.formatWithCurrency(totalExpense),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -654,7 +656,7 @@ private fun BalanceRingCard(
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (monthlyBudget > 0) "₹${formatAmount(monthlyBudget)}" else "Not Set",
+                                if (monthlyBudget > 0) AmountUtils.formatWithCurrency(monthlyBudget) else "Not Set",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -760,7 +762,7 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
 
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    "₹${formatAmount(lastMonth)}",
+                    AmountUtils.formatWithCurrency(lastMonth),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -856,7 +858,7 @@ private fun HomeTransactionRow(
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}",
+                text = AmountUtils.formatWithCurrency(txn.amount),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Normal,
                 color = if (isBillable) amountColor
@@ -870,7 +872,7 @@ private fun HomeTransactionRow(
                 )
             } else if (txn.originalAmount != null) {
                 Text(
-                    text = "₹${AmountUtils.formatAmount(txn.originalAmount)}",
+                    text = AmountUtils.formatWithCurrency(txn.originalAmount),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),
@@ -949,8 +951,16 @@ fun QuickCategoryUpdateDialog(
     onSave: (SmsTransactionEntity) -> Unit,
     onUpdateEmoji: ((String, String) -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val db = remember { LedgerPopDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
+    
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
     var editingEmojiFor by remember { mutableStateOf<String?>(null) }
+    
+    var showBulkUpdateDialog by remember { mutableStateOf(false) }
+    var similarTxnsToUpdate by remember { mutableStateOf<List<SmsTransactionEntity>>(emptyList()) }
+    var pendingSavedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
     val categories = remember(txn.type, customCategories) {
         val standard = if (txn.type == "CREDIT") {
@@ -1009,7 +1019,24 @@ fun QuickCategoryUpdateDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(txn.copy(category = selectedCategory)) },
+                onClick = {
+                    val updated = txn.copy(category = selectedCategory)
+                    if (txn.merchant.isNotBlank() && txn.merchant.length >= 3) {
+                        scope.launch {
+                            val similar = db.smsTransactionDao().getSimilarTransactions(txn.merchant, txn.id)
+                            val filtered = similar.filter { it.category != selectedCategory }
+                            if (filtered.isNotEmpty()) {
+                                pendingSavedTxn = updated
+                                similarTxnsToUpdate = filtered
+                                showBulkUpdateDialog = true
+                            } else {
+                                onSave(updated)
+                            }
+                        }
+                    } else {
+                        onSave(updated)
+                    }
+                },
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Save Changes")
@@ -1047,6 +1074,25 @@ fun QuickCategoryUpdateDialog(
             },
             dismissButton = {
                 TextButton(onClick = { editingEmojiFor = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showBulkUpdateDialog && pendingSavedTxn != null) {
+        BulkUpdateDialog(
+            newMerchantName = txn.merchant,
+            newCategory = selectedCategory,
+            similarTransactions = similarTxnsToUpdate,
+            onDismiss = {
+                onSave(pendingSavedTxn!!)
+                showBulkUpdateDialog = false
+            },
+            onApply = { selectedIds ->
+                scope.launch {
+                    db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                    onSave(pendingSavedTxn!!)
+                    showBulkUpdateDialog = false
+                }
             }
         )
     }
