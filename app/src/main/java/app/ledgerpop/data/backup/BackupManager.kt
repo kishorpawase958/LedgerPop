@@ -63,6 +63,7 @@ class BackupManager(private val context: Context) {
 
         val prefsJson = JSONObject()
         prefsJson.put("appTheme", sharedPrefs.getString("app_theme", AppTheme.AUTO.name))
+        prefsJson.put("appLogo", sharedPrefs.getString("app_logo", "DEFAULT"))
         prefsJson.put("userName", sharedPrefs.getString("user_name", "Kishor"))
         prefsJson.put("autoBackupEnabled", sharedPrefs.getBoolean("auto_backup_enabled", false))
         prefsJson.put("backupFrequency", sharedPrefs.getString("backup_frequency", "Daily"))

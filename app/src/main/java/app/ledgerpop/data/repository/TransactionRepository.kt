@@ -26,6 +26,13 @@ class TransactionRepository(
 
     suspend fun insert(txn: SmsTransactionEntity) = dao.insert(txn)
 
+    suspend fun getSimilarTransactions(merchant: String, excludeId: Int) = dao.getSimilarTransactions(merchant, excludeId)
+
+    suspend fun updateCategoryForIds(ids: List<Int>, category: String) = dao.updateCategoryForIds(ids, category)
+
+    suspend fun updateMerchantAndCategoryForIds(ids: List<Int>, merchant: String, category: String) = 
+        dao.updateMerchantAndCategoryForIds(ids, merchant, category)
+
     fun getAllCustomCategories() = categoryDao.getAllCategories()
     
     fun getAllAccounts() = accountDao.getAllAccounts()

@@ -1,5 +1,7 @@
 package app.ledgerpop.screens.transactions
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -7,9 +9,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,11 +24,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.CustomCategoryEntity
@@ -32,10 +39,22 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
 import app.ledgerpop.ui.components.ScrollableBarChart
+import app.ledgerpop.ui.components.BulkUpdateDialog
+import app.ledgerpop.ui.components.SpeedDialFab
+import app.ledgerpop.ui.components.SpeedDialAction
+import app.ledgerpop.ui.components.FloatingFilterPopup
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.IntOffset
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -53,13 +72,27 @@ fun TransactionsScreen(
     )
     val uiState by viewModel.uiState.collectAsState()
     val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
-    val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
     val filtered = uiState.filteredTransactions
+    val listState = rememberLazyListState()
+    val showScrollToTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 2 }
+    }
+
+    val locale = LocalConfiguration.current.locales[0]
+    val monthHeaderFormatter = remember(locale) { SimpleDateFormat("MMMM yyyy", locale) }
+    val groupedTransactions = remember(filtered, monthHeaderFormatter) {
+        filtered.groupBy { monthHeaderFormatter.format(Date(it.transactionTime)) }
+    }
 
     var selectedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
     var quickCategoryTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+
+    var isSearchActive by rememberSaveable { mutableStateOf(false) }
+    var isFabExpanded by remember { mutableStateOf(false) }
+    var showAccountFilterPopup by remember { mutableStateOf(false) }
+    var showCategoryFilterPopup by remember { mutableStateOf(false) }
 
     // Track which ID was last handled to avoid re-opening on tab switches
     var lastHandledId by rememberSaveable { mutableIntStateOf(-1) }
@@ -79,11 +112,16 @@ fun TransactionsScreen(
 
     val onTransactionClick = remember { { txn: SmsTransactionEntity -> selectedTxn = txn } }
     val onQuickCategoryClick = remember { { txn: SmsTransactionEntity -> quickCategoryTxn = txn } }
-    val filterOptions = remember { listOf("All", "Debit", "Credit") }
 
-    val categories = uiState.availableCategories
-    val accounts = uiState.availableAccounts
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val density = LocalDensity.current
+    
+    // FAB and Action Offsets (Matching SpeedDialFab layout)
+    // To align next to the main FAB '+', we use the FAB's vertical center as our anchor
+    val fabCenterYOffset = with(density) { (-(135 + 28)).dp.roundToPx() }
+    
+    // We'll use a consistent Y offset for all popups to keep them "next to" the FAB
+    val popupYOffset = fabCenterYOffset
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -96,131 +134,114 @@ fun TransactionsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
-                    .padding(top = 16.dp, bottom = 8.dp)
+                    .padding(top = 16.dp, bottom = 4.dp)
             ) {
-                Text(
-                    text = "Transactions",
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-                )
-
-                // Search & Date Row
-                Row(
+                AnimatedContent(
+                    targetState = isSearchActive,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = viewModel::onQueryChange,
-                        placeholder = { Text("Search transactions…") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { 
-                                    viewModel.onQueryChange("") 
-                                }) {
-                                    Icon(Icons.Rounded.Close, contentDescription = "Clear")
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                    label = "search_transition"
+                ) { active ->
+                    if (!active) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Transactions",
+                                style = MaterialTheme.typography.headlineMedium
+                            )
+                            IconButton(onClick = { isSearchActive = true }) {
+                                Icon(
+                                    Icons.Rounded.Search,
+                                    contentDescription = "Search",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                        }
+                    } else {
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = viewModel::onQueryChange,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    RoundedCornerShape(24.dp)
+                                ),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            decorationBox = { innerTextField ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(onClick = {
+                                        isSearchActive = false
+                                        viewModel.onQueryChange("")
+                                    }) {
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.ArrowBack,
+                                            contentDescription = "Back",
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Box(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                                        if (searchQuery.isEmpty()) {
+                                            Text(
+                                                "Search transactions...",
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontSize = 15.sp,
+                                                    color = MaterialTheme.colorScheme.outline
+                                                )
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { viewModel.onQueryChange("") }) {
+                                            Icon(Icons.Rounded.Close, null, modifier = Modifier.size(18.dp))
+                                        }
+                                    } else {
+                                        Spacer(Modifier.width(16.dp))
+                                    }
                                 }
                             }
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                         )
-                    )
-
-                    val hasDates = uiState.startDateMillis != null
-                    OutlinedIconButton(
-                        onClick = { showDatePicker = true },
-                        modifier = Modifier.size(54.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = IconButtonDefaults.outlinedIconButtonColors(
-                            containerColor = if (hasDates) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else Color.Transparent,
-                            contentColor = if (hasDates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            if (hasDates) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Icon(Icons.Rounded.DateRange, contentDescription = "Date Range")
                     }
                 }
-
-                // Type & Category filter chips
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    items(filterOptions, key = { it }) { filter ->
-                        FilterChip(
-                            selected = uiState.selectedFilter == filter,
-                            onClick = { viewModel.onFilterChange(filter) },
-                            label = { Text(filter) },
-                            leadingIcon = if (uiState.selectedFilter == filter) ({
-                                Icon(
-                                    Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }) else null
-                        )
-                    }
-
-                    // Category chips
-                    if (categories.size > 1) {
-                        items(categories.drop(1), key = { it }) { cat ->
-                            FilterChip(
-                                selected = uiState.selectedCategory == cat,
-                                onClick = {
-                                    viewModel.onCategoryChange(
-                                        if (uiState.selectedCategory == cat) "All" else cat
-                                    )
-                                },
-                                label = { Text(cat) },
-                                leadingIcon = if (uiState.selectedCategory == cat) ({
-                                    Icon(
-                                        Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }) else null
-                            )
+                
+                // Small filter status row
+                val hasActiveFilters = uiState.selectedFilter != "All" || uiState.selectedAccount != "All" || 
+                                     uiState.selectedCategory != "All" || uiState.startDateMillis != null
+                
+                if (hasActiveFilters) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (uiState.selectedFilter != "All") {
+                            FilterStatusChip(uiState.selectedFilter) { viewModel.onFilterChange("All") }
                         }
-                    }
-                }
-
-                // Account filter chips
-                if (accounts.size > 1) {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        items(accounts, key = { it }) { acc ->
-                            FilterChip(
-                                selected = uiState.selectedAccount == acc,
-                                onClick = {
-                                    viewModel.onAccountChange(
-                                        if (uiState.selectedAccount == acc) "All" else acc
-                                    )
-                                },
-                                label = { Text(acc) },
-                                leadingIcon = if (uiState.selectedAccount == acc) ({
-                                    Icon(
-                                        Icons.Rounded.AccountBalanceWallet,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }) else null
-                            )
+                        if (uiState.selectedAccount != "All") {
+                            FilterStatusChip(uiState.selectedAccount) { viewModel.onAccountChange("All") }
+                        }
+                        if (uiState.selectedCategory != "All") {
+                            FilterStatusChip(uiState.selectedCategory) { viewModel.onCategoryChange("All") }
+                        }
+                        if (uiState.startDateMillis != null) {
+                            FilterStatusChip("Date") { viewModel.clearDates() }
                         }
                     }
                 }
@@ -267,6 +288,15 @@ fun TransactionsScreen(
                     }
                 }
             } else {
+                if (uiState.trendSummaries.isNotEmpty()) {
+                    ScrollableBarChart(
+                        summaries = uiState.trendSummaries,
+                        selectedMonth = uiState.selectedMonth,
+                        onBarClick = { viewModel.onMonthToggle(it) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 // Count bar
                 Text(
                     text = "${filtered.size} transaction${if (filtered.size != 1) "s" else ""}",
@@ -276,57 +306,122 @@ fun TransactionsScreen(
                 )
 
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    if (uiState.trendSummaries.isNotEmpty()) {
-                        item {
+                    groupedTransactions.forEach { (month, transactions) ->
+                        item(key = month) {
                             Text(
-                                text = "Monthly Trend",
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)
+                                text = month,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(horizontal = 20.dp)
+                                    .padding(top = 16.dp, bottom = 8.dp)
                             )
-                            ScrollableBarChart(
-                                summaries = uiState.trendSummaries,
-                                selectedMonth = uiState.selectedMonth,
-                                onBarClick = { viewModel.onMonthToggle(it) }
-                            )
-                            Spacer(Modifier.height(16.dp))
                         }
-                    }
 
-                    items(
-                        items = filtered,
-                        key = { it.id }
-                    ) { txn ->
-                        TransactionRow(
-                            txn = txn,
-                            customCategories = uiState.customCategories,
-                            allTransactions = uiState.allTransactions,
-                            onClick = onTransactionClick,
-                            onCategoryClick = onQuickCategoryClick
-                        )
+                        items(
+                            items = transactions,
+                            key = { it.id }
+                        ) { txn ->
+                            TransactionRow(
+                                txn = txn,
+                                customCategories = uiState.customCategories,
+                                allTransactions = uiState.allTransactions,
+                                onClick = onTransactionClick,
+                                onCategoryClick = onQuickCategoryClick
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // ── FAB ─────────────────────────────────────────────────────────────
-        FloatingActionButton(
-            onClick = { showAddSheet = true },
+        // ── Scroll to Top Button ──────────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = showScrollToTop,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 135.dp),
-            containerColor = accentColor,
-            contentColor = Color.White,
-            shape = RoundedCornerShape(18.dp)
+                .padding(end = 24.dp, bottom = 210.dp)
+                .width(56.dp)
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = "Add",
-                modifier = Modifier.size(28.dp)
-            )
+            Box(contentAlignment = Alignment.Center) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        scope.launch { listState.animateScrollToItem(0) }
+                    },
+                    containerColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700,
+                    contentColor = Color.White,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = "Scroll to top", modifier = Modifier.size(20.dp))
+                }
+            }
         }
+
+        // ── SpeedDial FAB ─────────────────────────────────────────────────────────────
+        SpeedDialFab(
+            isExpanded = isFabExpanded,
+            onExpandedChange = { isFabExpanded = it },
+            actions = listOf(
+                
+                SpeedDialAction(
+                    icon = Icons.Rounded.AccountBalanceWallet,
+                    label = "Account",
+                    onClick = { showAccountFilterPopup = true }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.Category,
+                    label = "Category",
+                    onClick = { showCategoryFilterPopup = true }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.DateRange,
+                    label = "Date",
+                    onClick = { showDatePicker = true }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.Download,
+                    label = "Export",
+                    onClick = { /* Export logic - usually in viewModel or similar */ }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.Add,
+                    label = "Add",
+                    onClick = { showAddSheet = true }
+                )
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 135.dp)
+        )
+    }
+
+    if (showAccountFilterPopup) {
+        FloatingFilterPopup(
+            title = "Filter Account",
+            options = uiState.availableAccounts,
+            selected = uiState.selectedAccount,
+            onSelect = { viewModel.onAccountChange(it) },
+            onDismiss = { showAccountFilterPopup = false },
+            yOffset = popupYOffset
+        )
+    }
+
+    if (showCategoryFilterPopup) {
+        FloatingFilterPopup(
+            title = "Filter Category",
+            options = uiState.availableCategories,
+            selected = uiState.selectedCategory,
+            onSelect = { viewModel.onCategoryChange(it) },
+            onDismiss = { showCategoryFilterPopup = false },
+            emojiProvider = { CategoryEngine.emoji(it, uiState.customCategories) },
+            yOffset = popupYOffset
+        )
     }
 
     // ── Quick Category Update Dialog ─────────────────────────────────────────
@@ -425,7 +520,39 @@ fun TransactionsScreen(
     }
 }
 
-// ── Transaction Row ────────────────────────────────────────────────────────────
+@Composable
+private fun FilterStatusChip(
+    text: String,
+    onClear: () -> Unit
+) {
+    Surface(
+        onClick = onClear,
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.height(32.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 80.dp)
+            )
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Clear",
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
 
 @Composable
 private fun TransactionRow(
@@ -561,14 +688,14 @@ private fun TransactionRow(
         // Amount
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}",
+                text = AmountUtils.formatWithCurrency(txn.amount),
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (isBillable) amountColor
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (txn.originalAmount != null) {
                 Text(
-                    text = "₹${AmountUtils.formatAmount(txn.originalAmount)}",
+                    text = AmountUtils.formatWithCurrency(txn.originalAmount),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),
@@ -604,7 +731,15 @@ fun QuickCategoryUpdateDialog(
     onDismiss: () -> Unit,
     onSave: (SmsTransactionEntity) -> Unit
 ) {
+    val context = LocalContext.current
+    val db = remember { LedgerPopDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
+    
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
+    
+    var showBulkUpdateDialog by remember { mutableStateOf(false) }
+    var similarTxnsToUpdate by remember { mutableStateOf<List<SmsTransactionEntity>>(emptyList()) }
+    var pendingSavedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
     val categories = remember(txn.type, customCategories) {
         val standard = if (txn.type == "CREDIT") {
@@ -654,7 +789,24 @@ fun QuickCategoryUpdateDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(txn.copy(category = selectedCategory)) },
+                onClick = {
+                    val updated = txn.copy(category = selectedCategory)
+                    if (txn.merchant.isNotBlank() && txn.merchant.length >= 3) {
+                        scope.launch {
+                            val similar = db.smsTransactionDao().getSimilarTransactions(txn.merchant, txn.id)
+                            val filtered = similar.filter { it.category != selectedCategory }
+                            if (filtered.isNotEmpty()) {
+                                pendingSavedTxn = updated
+                                similarTxnsToUpdate = filtered
+                                showBulkUpdateDialog = true
+                            } else {
+                                onSave(updated)
+                            }
+                        }
+                    } else {
+                        onSave(updated)
+                    }
+                },
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Save")
@@ -667,4 +819,23 @@ fun QuickCategoryUpdateDialog(
         },
         shape = RoundedCornerShape(24.dp)
     )
+
+    if (showBulkUpdateDialog && pendingSavedTxn != null) {
+        BulkUpdateDialog(
+            newMerchantName = txn.merchant,
+            newCategory = selectedCategory,
+            similarTransactions = similarTxnsToUpdate,
+            onDismiss = {
+                onSave(pendingSavedTxn!!)
+                showBulkUpdateDialog = false
+            },
+            onApply = { selectedIds ->
+                scope.launch {
+                    db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                    onSave(pendingSavedTxn!!)
+                    showBulkUpdateDialog = false
+                }
+            }
+        )
+    }
 }

@@ -29,6 +29,7 @@ class SmsReceiver : BroadcastReceiver() {
         val auditDao = db.smsAuditDao()
         val aliasDao = db.accountAliasDao()
         val accountDao = db.accountDao()
+        val smartRuleDao = db.smartRuleDao()
 
         val pendingResult = goAsync()
 
@@ -52,7 +53,8 @@ class SmsReceiver : BroadcastReceiver() {
                         dao = dao,
                         auditDao = auditDao,
                         aliasDao = aliasDao,
-                        accountDao = accountDao
+                        accountDao = accountDao,
+                        smartRuleDao = smartRuleDao
                     )
 
                     val entity = importer.importSingle(msg)
