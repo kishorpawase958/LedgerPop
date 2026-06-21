@@ -5,10 +5,11 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.widget.RemoteViews
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import app.ledgerpop.MainActivity
 import app.ledgerpop.R
 import app.ledgerpop.data.category.CategoryEngine
@@ -41,18 +42,10 @@ object NotificationHelper {
         val dateStr = dateFormatter.format(Date(txn.transactionTime))
 
         val isDebit = txn.type == "DEBIT"
-        val amountSign = if (isDebit) "-" else "+"
-        val amountText = "$amountSign₹${AmountUtils.formatAmount(txn.amount)}"
+        val amountText = "₹${AmountUtils.formatAmount(txn.amount)}"
+        val actionVerb = if (isDebit) "spent at" else "received from"
         val logType = if (isDebit) "Expense Logged" else "Income Logged"
         val emoji = CategoryEngine.emoji(txn.category)
-
-        // Custom Layout for Notification
-        val remoteViews = RemoteViews(context.packageName, R.layout.notification_transaction)
-        remoteViews.setTextViewText(R.id.notification_header, logType)
-        remoteViews.setTextViewText(R.id.notification_amount, amountText)
-        remoteViews.setTextViewText(R.id.notification_category, "$emoji ${txn.category}")
-        remoteViews.setTextViewText(R.id.notification_merchant, txn.merchant)
-        remoteViews.setTextViewText(R.id.notification_time, "$timeStr, $dateStr")
 
         // Intent to open the app
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -73,17 +66,24 @@ object NotificationHelper {
             context, txn.id, excludeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        remoteViews.setOnClickPendingIntent(R.id.notification_btn_exclude, excludePendingIntent)
+
+        val title = "$amountText $actionVerb ${txn.merchant}"
+        val content = "$emoji ${txn.category}${if (txn.accountHint.isNotEmpty()) " • ${txn.accountHint}" else ""}"
+
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher_foreground)
-            .setCustomContentView(remoteViews)
-            .setCustomBigContentView(remoteViews)
-            .setCustomHeadsUpContentView(remoteViews)
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setContentTitle(title)
+            .setContentText(content)
+            .setSubText(logType)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .addAction(0, "Exclude", excludePendingIntent)
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText("$content\n$timeStr, $dateStr")
+                .setBigContentTitle(title)
+                .setSummaryText(logType))
 
         with(NotificationManagerCompat.from(context)) {
             try {

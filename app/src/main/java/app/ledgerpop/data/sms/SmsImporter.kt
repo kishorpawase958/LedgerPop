@@ -107,6 +107,12 @@ class SmsImporter(
 
             scanned++
 
+            // If it's already in audit, skip completely
+            if (auditDao.existsDuplicate(msg.sender, msg.body, msg.timestamp) > 0) {
+                skipped++
+                continue
+            }
+
             val smartAction = getSmartAction(msg.sender, msg.body)
 
             val shouldProcess = when (smartAction) {
@@ -159,8 +165,8 @@ class SmsImporter(
                 continue
             }
 
-            val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type)
-            if (dao.exists(hashKey) > 0) {
+            val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
+            if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
                 skipped++
                 continue
             }
@@ -227,6 +233,11 @@ class SmsImporter(
             "Processing: sender=${msg.sender} | smartAction=$smartAction | filter=$shouldProcess | reason=$reason | body=${msg.body.take(120)}"
         )
 
+        if (auditDao.existsDuplicate(msg.sender, msg.body, msg.timestamp) > 0) {
+            Log.d(TAG, "Duplicate audit entry skipped")
+            return null
+        }
+
         if (!shouldProcess) {
             val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
 
@@ -266,9 +277,9 @@ class SmsImporter(
             return null
         }
 
-        val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type)
+        val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
 
-        if (dao.exists(hashKey) > 0) {
+        if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
             Log.d(TAG, "Duplicate skipped: $hashKey")
             return null
         }
@@ -318,8 +329,14 @@ class SmsImporter(
         sender: String,
         timestamp: Long,
         amount: Double,
-        type: String
+        type: String,
+        refNo: String = ""
     ): String {
-        return "${sender}_${timestamp}_${amount}_${type}"
+        if (refNo.isNotBlank()) {
+            return "${sender}_${refNo}_${amount}_${type}"
+        }
+        // Use a 5-second window to handle slight discrepancies between receiver and content provider
+        val rounded = (timestamp / 5000) * 5000
+        return "${sender}_${rounded}_${amount}_${type}"
     }
 }

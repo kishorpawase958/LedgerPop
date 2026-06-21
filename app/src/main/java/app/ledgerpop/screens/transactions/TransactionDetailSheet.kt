@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -25,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
@@ -39,16 +42,27 @@ import androidx.compose.ui.platform.LocalLocale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionDetailSheet(
+fun TransactionDetailScreen(
     txn: SmsTransactionEntity,
     onDismiss: () -> Unit,
     onSave: (SmsTransactionEntity) -> Unit,
     onDelete: (SmsTransactionEntity) -> Unit,
     onNavigateToTransaction: (Int) -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val db = remember { LedgerPopDatabase.getInstance(context) }
-    val scope = rememberCoroutineScope()
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            val context = LocalContext.current
+            val db = remember { LedgerPopDatabase.getInstance(context) }
+            val scope = rememberCoroutineScope()
 
     val linkedCredits by produceState(initialValue = emptyList<SmsTransactionEntity>(), txn.id) {
         db.smsTransactionDao().getLinkedCredits(txn.id).collect { value = it }
@@ -131,86 +145,84 @@ fun TransactionDetailSheet(
 
     val amountColor = if (isExpense) MaterialTheme.colorScheme.error else Color(0xFF00B894)
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
-    ) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Transaction Details", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = {
+                            val amt = amount.toDoubleOrNull() ?: return@TextButton
+                            val updatedTxn = txn.copy(
+                                amount = amt,
+                                type = if (isExpense) "DEBIT" else "CREDIT",
+                                merchant = merchant,
+                                category = category,
+                                accountHint = account,
+                                transactionTime = selectedDateMillis,
+                                isBillable = isBillable,
+                                note = note.trim(),
+                                originalAmount = originalAmount
+                            )
+
+                            // Check if merchant or category changed
+                            val oldMerchant = txn.merchant.trim()
+                            val newMerchant = merchant.trim()
+                            val merchantChanged = newMerchant != oldMerchant
+                            val categoryChanged = category.trim() != txn.category.trim()
+
+                            if ((merchantChanged || categoryChanged) && newMerchant.length >= 3) {
+                                scope.launch {
+                                    val similarToNew = db.smsTransactionDao().getSimilarTransactions(newMerchant, txn.id)
+                                    val similarToOld = if (merchantChanged && oldMerchant.length >= 3) {
+                                        db.smsTransactionDao().getSimilarTransactions(oldMerchant, txn.id)
+                                    } else emptyList()
+                                    
+                                    val allSimilar = (similarToNew + similarToOld).distinctBy { it.id }
+                                    val filtered = allSimilar.filter { 
+                                        it.category != category.trim() || (merchantChanged && it.merchant.trim() != newMerchant)
+                                    }
+
+                                    if (filtered.isNotEmpty()) {
+                                        pendingSavedTxn = updatedTxn
+                                        similarTxnsToUpdate = filtered
+                                        showBulkUpdateDialog = true
+                                    } else {
+                                        onSave(updatedTxn)
+                                    }
+                                }
+                            } else {
+                                onSave(updatedTxn)
+                            }
+                        }
+                    ) {
+                        Text("Save", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { innerPadding ->
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
                 .verticalScroll(rememberScrollState())
+                .padding(innerPadding)
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
+                .padding(bottom = 120.dp) // Increased to clear floating nav bars
         ) {
-            // Header Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text(
-                    "Transaction",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Button(
-                    onClick = {
-                        val amt = amount.toDoubleOrNull() ?: return@Button
-                        val updatedTxn = txn.copy(
-                            amount = amt,
-                            type = if (isExpense) "DEBIT" else "CREDIT",
-                            merchant = merchant,
-                            category = category,
-                            accountHint = account,
-                            transactionTime = selectedDateMillis,
-                            isBillable = isBillable,
-                            note = note.trim(),
-                            originalAmount = originalAmount
-                        )
 
-                        // Check if merchant or category changed
-                        val oldMerchant = txn.merchant.trim()
-                        val newMerchant = merchant.trim()
-                        val merchantChanged = newMerchant != oldMerchant
-                        val categoryChanged = category.trim() != txn.category.trim()
-
-                        if ((merchantChanged || categoryChanged) && newMerchant.length >= 3) {
-                            scope.launch {
-                                val similarToNew = db.smsTransactionDao().getSimilarTransactions(newMerchant, txn.id)
-                                val similarToOld = if (merchantChanged && oldMerchant.length >= 3) {
-                                    db.smsTransactionDao().getSimilarTransactions(oldMerchant, txn.id)
-                                } else emptyList()
-                                
-                                val allSimilar = (similarToNew + similarToOld).distinctBy { it.id }
-                                val filtered = allSimilar.filter { 
-                                    it.category != category.trim() || (merchantChanged && it.merchant.trim() != newMerchant)
-                                }
-
-                                if (filtered.isNotEmpty()) {
-                                    pendingSavedTxn = updatedTxn
-                                    similarTxnsToUpdate = filtered
-                                    showBulkUpdateDialog = true
-                                } else {
-                                    onSave(updatedTxn)
-                                }
-                            }
-                        } else {
-                            onSave(updatedTxn)
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Text("Save")
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
+            // Removed extra top spacer to fix unnecessary empty space at top
 
             // Large Amount Input Section
             Column(
@@ -504,7 +516,7 @@ fun TransactionDetailSheet(
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(16.dp))
 
             // Delete Button
             TextButton(
@@ -706,6 +718,8 @@ fun TransactionDetailSheet(
             }
         )
     }
+}
+}
 }
 
 @Composable

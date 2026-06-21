@@ -136,13 +136,14 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp, top = 16.dp),
+            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp, top = 20.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         Text(
             "Settings",
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onBackground
         )
 

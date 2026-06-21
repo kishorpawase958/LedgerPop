@@ -30,7 +30,8 @@ open class SmsReader(private val context: Context) {
 
         val messages = mutableListOf<SmsMessage>()
         val uri = Uri.parse("content://sms/inbox")
-        val projection = arrayOf("address", "body", "date")
+        // Use date_sent if available as it matches the SC timestamp used by SmsReceiver
+        val projection = arrayOf("address", "body", "date", "date_sent")
 
         var cursor: Cursor? = null
         try {
@@ -39,11 +40,18 @@ open class SmsReader(private val context: Context) {
                 val addressIdx = it.getColumnIndexOrThrow("address")
                 val bodyIdx = it.getColumnIndexOrThrow("body")
                 val dateIdx = it.getColumnIndexOrThrow("date")
+                val dateSentIdx = it.getColumnIndex("date_sent")
 
                 while (it.moveToNext()) {
                     val sender = it.getString(addressIdx) ?: continue
                     val body = it.getString(bodyIdx) ?: continue
-                    val timestamp = it.getLong(dateIdx)
+                    
+                    var timestamp = it.getLong(dateIdx)
+                    if (dateSentIdx != -1) {
+                        val sent = it.getLong(dateSentIdx)
+                        if (sent > 0) timestamp = sent
+                    }
+
                     if (body.isBlank()) continue
                     messages.add(SmsMessage(sender, body, timestamp))
                 }

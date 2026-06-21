@@ -8,11 +8,16 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.state.TransactionsUiState
+import android.content.Context
+import android.content.Intent
+import androidx.core.content.FileProvider
+import app.ledgerpop.data.category.CategoryEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -188,6 +193,73 @@ class TransactionsViewModel(
 
     fun addTransaction(txn: SmsTransactionEntity) {
         viewModelScope.launch { repository.insert(txn) }
+    }
+
+    fun exportToCsv(context: Context) {
+        viewModelScope.launch {
+            try {
+                val state = uiState.value
+                val txns = state.filteredTransactions.sortedByDescending { it.transactionTime }
+                if (txns.isEmpty()) return@launch
+
+                val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+                val csvHeader = "DATE,TIME,MERCHANT,AMOUNT,DR/CR,ACCOUNT,EXPENSE,INCOME,CATEGORY,NOTE\n"
+                val csvData = StringBuilder(csvHeader)
+
+                txns.forEach { txn ->
+                    val txDate = Date(txn.transactionTime)
+                    val date = dateFormatter.format(txDate)
+                    val time = timeFormatter.format(txDate)
+
+                    val merchant = "\"${txn.merchant.replace("\"", "\"\"")}\""
+                    val amount = txn.amount
+                    val drCr = if (txn.type == "DEBIT") "DR" else "CR"
+                    val account = "\"${txn.accountHint.ifBlank { "Unknown" }.replace("\"", "\"\"")}\""
+
+                    val isExpenseReported = if (txn.type == "DEBIT") {
+                        if (txn.isBillable) "YES" else "NO"
+                    } else "-"
+
+                    val isIncomeReported = if (txn.type == "CREDIT") {
+                        if (txn.isBillable) "YES" else "NO"
+                    } else "-"
+
+                    val category = "\"${txn.category.ifBlank { "Other" }.replace("\"", "\"\"")}\""
+                    val note = "\"${txn.note.replace("\"", "\"\"")}\""
+
+                    csvData.append("$date,$time,$merchant,$amount,$drCr,$account,$isExpenseReported,$isIncomeReported,$category,$note\n")
+                }
+
+                val fileDateFormatter = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
+                val startMillis = state.startDateMillis ?: txns.minOf { it.transactionTime }
+                val endMillis = state.endDateMillis ?: txns.maxOf { it.transactionTime }
+
+                val fromDate = fileDateFormatter.format(Date(startMillis))
+                val toDate = fileDateFormatter.format(Date(endMillis))
+
+                val fileName = "TxnReport_${fromDate}_to_${toDate}.csv"
+                val file = File(context.cacheDir, fileName)
+                file.writeText(csvData.toString())
+
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.provider",
+                    file
+                )
+
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                context.startActivity(Intent.createChooser(shareIntent, "Export LedgerPop Data"))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     companion object {

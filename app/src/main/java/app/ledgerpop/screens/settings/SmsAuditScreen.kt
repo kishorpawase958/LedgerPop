@@ -84,6 +84,7 @@ fun SmsAuditScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
     ) {
         // ── Top bar ───────────────────────────────────────────────────────────
         Row(

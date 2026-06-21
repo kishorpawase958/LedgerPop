@@ -155,14 +155,14 @@ fun LedgerPopApp(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             // Main Content Area that flows behind the floating navigation bar
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .hazeSource(state = hazeState)
-                    .padding(top = innerPadding.calculateTopPadding())
             ) {
                 NavHost(
                     navController = navController,

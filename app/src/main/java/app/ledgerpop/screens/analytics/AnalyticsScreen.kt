@@ -54,7 +54,7 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.state.CategorySummary
 import app.ledgerpop.ui.viewmodel.AnalyticsViewModel
 import app.ledgerpop.ui.viewmodel.DrillDownType
-import app.ledgerpop.screens.transactions.TransactionDetailSheet
+import app.ledgerpop.screens.transactions.TransactionDetailScreen
 import app.ledgerpop.screens.transactions.QuickCategoryUpdateDialog
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
@@ -99,7 +99,7 @@ fun AnalyticsScreen() {
     
     val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
     val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
-    val accentLight = if (isMidnight) MaterialTheme.colorScheme.primary else Purple500
+    val accentLight = if (isMidnight) MaterialTheme.colorScheme.primary else Purple700
 
     val drillDownData by viewModel.drillDownTransactions.collectAsState()
     val drillDownTitle by viewModel.drillDownTitle.collectAsState()
@@ -127,7 +127,7 @@ fun AnalyticsScreen() {
         return
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -273,22 +273,38 @@ fun AnalyticsScreen() {
                                 }
                                 .padding(4.dp)
                         ) {
+                            // Thumb (behind text)
                             Box(
                                 modifier = Modifier
                                     .offset { IntOffset(x = thumbOffset.roundToPx(), y = 0) }
                                     .fillMaxHeight()
                                     .width(52.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(themeColor),
-                                contentAlignment = Alignment.Center
+                                    .background(themeColor)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = if (isIncome) "Income" else "Spends",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 0.5.sp
-                                )
+                                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "Spends",
+                                        color = if (!isIncome) Color.White else themeColor,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "Income",
+                                        color = if (isIncome) Color.White else themeColor,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -401,16 +417,7 @@ fun AnalyticsScreen() {
             isExpanded = isFabExpanded,
             onExpandedChange = { isFabExpanded = it },
             actions = listOf(
-                SpeedDialAction(
-                    icon = Icons.Rounded.Download,
-                    label = "Export",
-                    onClick = { viewModel.exportToCsv(context) }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.DateRange,
-                    label = "Date",
-                    onClick = { showDatePickerState.value = true }
-                ),
+
                 SpeedDialAction(
                     icon = Icons.Rounded.AccountBalanceWallet,
                     label = "Account",
@@ -420,6 +427,15 @@ fun AnalyticsScreen() {
                     icon = Icons.Rounded.Category,
                     label = "Category",
                     onClick = { showCategoryFilterPopup = true }
+                ),
+                SpeedDialAction(
+                    icon = Icons.Rounded.DateRange,
+                    label = "Date",
+                    onClick = { showDatePickerState.value = true }
+                ),
+                SpeedDialAction(icon = Icons.Rounded.Download,
+                label = "Export",
+                onClick = { viewModel.exportToCsv(context) }
                 )
             ),
             modifier = Modifier
@@ -554,7 +570,7 @@ fun AnalyticsScreen() {
 
     // ── Detail / Edit Sheet ──────────────────────────────────────────────────
     selectedTxnState.value?.let { txn ->
-        TransactionDetailSheet(
+        TransactionDetailScreen(
             txn = txn,
             onDismiss = { selectedTxnState.value = null },
             onSave = { updated ->

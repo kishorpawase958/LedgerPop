@@ -11,7 +11,8 @@ data class ParsedSmsTransaction(
     val bank: String,
     val accountName: String,
     val category: String,
-    val includeInAnalytics: Boolean = true
+    val includeInAnalytics: Boolean = true,
+    val refNo: String = ""
 )
 
 object SmsParser {
@@ -48,6 +49,8 @@ object SmsParser {
 
         val amount = extractAmount(text) ?: if (ignoreSpamCheck) 0.0 else return null
         val type = detectType(text) ?: if (ignoreSpamCheck) "DEBIT" else return null
+
+        val refNo = extractRefNo(text)
 
         // Extract Account Data
         val accountLast4 = extractAccountLast4(text)
@@ -87,8 +90,23 @@ object SmsParser {
             bank = cleanBankName,
             accountName = accountName,
             category = category,
-            includeInAnalytics = !isRepayment
+            includeInAnalytics = !isRepayment,
+            refNo = refNo
         )
+    }
+
+    private fun extractRefNo(text: String): String {
+        val patterns = listOf(
+            Regex("""(?i)(?:ref\s*no|ref|utr|txn\s*id|id|trans\s*id)[:\-\s]+([A-Z0-9]{6,20})"""),
+            Regex("""(?i)ref[:\-\s]*([A-Z0-9]{6,20})"""),
+            Regex("""(?i)No\.\s*([A-Z0-9]{8,20})""")
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            val ref = match?.groupValues?.getOrNull(1)
+            if (!ref.isNullOrBlank()) return ref
+        }
+        return ""
     }
 
     private fun extractAmount(text: String): Double? {

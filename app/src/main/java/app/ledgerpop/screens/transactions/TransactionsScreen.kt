@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
@@ -114,6 +116,7 @@ fun TransactionsScreen(
     val onQuickCategoryClick = remember { { txn: SmsTransactionEntity -> quickCategoryTxn = txn } }
 
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val focusRequester = remember { FocusRequester() }
     val density = LocalDensity.current
     
     // FAB and Action Offsets (Matching SpeedDialFab layout)
@@ -123,7 +126,7 @@ fun TransactionsScreen(
     // We'll use a consistent Y offset for all popups to keep them "next to" the FAB
     val popupYOffset = fabCenterYOffset
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -134,13 +137,12 @@ fun TransactionsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
-                    .padding(top = 16.dp, bottom = 4.dp)
             ) {
                 AnimatedContent(
                     targetState = isSearchActive,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
                     label = "search_transition"
                 ) { active ->
                     if (!active) {
@@ -151,8 +153,30 @@ fun TransactionsScreen(
                         ) {
                             Text(
                                 text = "Transactions",
-                                style = MaterialTheme.typography.headlineMedium
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = MaterialTheme.colorScheme.onBackground
                             )
+
+                            // Small filter status row (Moved inside row to match Analytics styling)
+                            Row(
+                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (uiState.selectedFilter != "All") {
+                                    FilterStatusChip(uiState.selectedFilter) { viewModel.onFilterChange("All") }
+                                }
+                                if (uiState.selectedAccount != "All") {
+                                    FilterStatusChip(uiState.selectedAccount) { viewModel.onAccountChange("All") }
+                                }
+                                if (uiState.selectedCategory != "All") {
+                                    FilterStatusChip(uiState.selectedCategory) { viewModel.onCategoryChange("All") }
+                                }
+                                if (uiState.startDateMillis != null) {
+                                    FilterStatusChip("Date") { viewModel.clearDates() }
+                                }
+                            }
+
                             IconButton(onClick = { isSearchActive = true }) {
                                 Icon(
                                     Icons.Rounded.Search,
@@ -162,10 +186,14 @@ fun TransactionsScreen(
                             }
                         }
                     } else {
+                        LaunchedEffect(Unit) {
+                            focusRequester.requestFocus()
+                        }
                         BasicTextField(
                             value = searchQuery,
                             onValueChange = viewModel::onQueryChange,
                             modifier = Modifier
+                                .focusRequester(focusRequester)
                                 .fillMaxWidth()
                                 .height(48.dp)
                                 .background(
@@ -218,38 +246,8 @@ fun TransactionsScreen(
                         )
                     }
                 }
-                
-                // Small filter status row
-                val hasActiveFilters = uiState.selectedFilter != "All" || uiState.selectedAccount != "All" || 
-                                     uiState.selectedCategory != "All" || uiState.startDateMillis != null
-                
-                if (hasActiveFilters) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (uiState.selectedFilter != "All") {
-                            FilterStatusChip(uiState.selectedFilter) { viewModel.onFilterChange("All") }
-                        }
-                        if (uiState.selectedAccount != "All") {
-                            FilterStatusChip(uiState.selectedAccount) { viewModel.onAccountChange("All") }
-                        }
-                        if (uiState.selectedCategory != "All") {
-                            FilterStatusChip(uiState.selectedCategory) { viewModel.onCategoryChange("All") }
-                        }
-                        if (uiState.startDateMillis != null) {
-                            FilterStatusChip("Date") { viewModel.clearDates() }
-                        }
-                    }
-                }
             }
 
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-            )
 
             // ── List ────────────────────────────────────────────────────────
             if (uiState.isLoading) {
@@ -297,13 +295,46 @@ fun TransactionsScreen(
                     Spacer(Modifier.height(8.dp))
                 }
 
-                // Count bar
-                Text(
-                    text = "${filtered.size} transaction${if (filtered.size != 1) "s" else ""}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                )
+                // Filter row with count
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("All", "Debit", "Credit").forEach { type ->
+                            val isSelected = uiState.selectedFilter == type
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.onFilterChange(type) },
+                                label = { Text(type, style = MaterialTheme.typography.labelMedium) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    containerColor = Color.Transparent,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    selectedBorderColor = Color.Transparent,
+                                    borderWidth = 1.dp,
+                                    selectedBorderWidth = 0.dp
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "${filtered.size} transactions",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 LazyColumn(
                     state = listState,
@@ -387,7 +418,7 @@ fun TransactionsScreen(
                 SpeedDialAction(
                     icon = Icons.Rounded.Download,
                     label = "Export",
-                    onClick = { /* Export logic - usually in viewModel or similar */ }
+                    onClick = { viewModel.exportToCsv(context) }
                 ),
                 SpeedDialAction(
                     icon = Icons.Rounded.Add,
@@ -491,7 +522,7 @@ fun TransactionsScreen(
 
     // ── Detail / edit sheet ──────────────────────────────────────────────────
     selectedTxn?.let { txn ->
-        TransactionDetailSheet(
+        TransactionDetailScreen(
             txn = txn,
             onDismiss = { selectedTxn = null },
             onSave = { updated ->
@@ -513,7 +544,7 @@ fun TransactionsScreen(
 
     // ── Add transaction sheet ────────────────────────────────────────────────
     if (showAddSheet) {
-        AddTransactionSheet(
+        AddTransactionDialog(
             onDismiss = { showAddSheet = false },
             onAdd = { viewModel.addTransaction(it) }
         )

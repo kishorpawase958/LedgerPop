@@ -151,7 +151,7 @@ class SettingsViewModel(
             } else {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             }
-            
+
             pm.setComponentEnabledSetting(
                 ComponentName(packageName, "$packageName$activityName"),
                 state,

@@ -71,6 +71,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
     ) {
         // App Bar Header Action Row
         Row(

@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AccountAliasEntity::class,
         SmartRuleEntity::class
     ],
-    version = 10, // bumped from 9
+    version = 11, // bumped from 10
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -29,6 +29,34 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun smartRuleDao(): SmartRuleDao
 
     companion object {
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. Clean up existing duplicates to ensure the UNIQUE index can be created safely.
+                // We keep the entry with the smallest ID for each hashKey.
+                db.execSQL("""
+                    DELETE FROM sms_transactions 
+                    WHERE id NOT IN (
+                        SELECT MIN(id) 
+                        FROM sms_transactions 
+                        GROUP BY hashKey
+                    )
+                """.trimIndent())
+
+                db.execSQL("""
+                    DELETE FROM sms_audit 
+                    WHERE id NOT IN (
+                        SELECT MIN(id) 
+                        FROM sms_audit 
+                        GROUP BY hashKey
+                    )
+                """.trimIndent())
+
+                // 2. Add unique indices to hashKey.
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sms_transactions_hashKey` ON `sms_transactions` (`hashKey`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sms_audit_hashKey` ON `sms_audit` (`hashKey`)")
+            }
+        }
+
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Add the 'note' column to 'sms_transactions' table
@@ -88,7 +116,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
                     LedgerPopDatabase::class.java,
                     "ledgerpop_db"
                 )
-                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }

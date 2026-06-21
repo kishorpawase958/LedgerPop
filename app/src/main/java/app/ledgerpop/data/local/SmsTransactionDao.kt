@@ -33,6 +33,15 @@ interface SmsTransactionDao {
     @Query("SELECT COUNT(*) FROM sms_transactions WHERE hashKey = :hashKey")
     suspend fun exists(hashKey: String): Int
 
+    @Query("""
+        SELECT COUNT(*) FROM sms_transactions 
+        WHERE sender = :sender 
+        AND body = :body 
+        AND amount = :amount 
+        AND ABS(transactionTime - :timestamp) < 10000
+    """)
+    suspend fun existsDuplicate(sender: String, body: String, amount: Double, timestamp: Long): Int
+
     @Query("DELETE FROM sms_transactions")
     suspend fun clearAll()
 

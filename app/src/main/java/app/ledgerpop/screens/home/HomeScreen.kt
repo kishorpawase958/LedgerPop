@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -78,8 +79,8 @@ import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
-import app.ledgerpop.screens.transactions.AddTransactionSheet
-import app.ledgerpop.screens.transactions.TransactionDetailSheet
+import app.ledgerpop.screens.transactions.AddTransactionDialog
+import app.ledgerpop.screens.transactions.TransactionDetailScreen
 import app.ledgerpop.ui.components.BulkUpdateDialog
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
@@ -126,6 +127,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .hazeSource(state = hazeState)
+            .statusBarsPadding()
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -272,7 +274,7 @@ fun HomeScreen(
     }
 
     selectedTxn?.let { txn ->
-        TransactionDetailSheet(
+        TransactionDetailScreen(
             txn = txn,
             onDismiss = { selectedTxn = null },
             onSave = { updated ->
@@ -295,7 +297,7 @@ fun HomeScreen(
     }
 
     if (showAddSheet) {
-        AddTransactionSheet(
+        AddTransactionDialog(
             onDismiss = { showAddSheet = false },
             onAdd = { newTxn -> viewModel.addTransaction(newTxn) }
         )
