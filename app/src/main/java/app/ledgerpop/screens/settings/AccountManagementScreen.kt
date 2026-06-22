@@ -83,6 +83,7 @@ fun AccountManagementScreen(
                             onEdit = { editingAccount = account },
                             onMerge = { mergingAccount = account },
                             onDelete = { viewModel.deleteAccount(account.id) },
+                            onUnlink = { alias -> viewModel.unlinkAccount(alias) },
                             onMove = { newType -> viewModel.updateAccount(account.id, account.name, account.icon, newType) }
                         )
                     }
@@ -101,6 +102,7 @@ fun AccountManagementScreen(
                         onEdit = { editingAccount = account },
                         onMerge = { mergingAccount = account },
                         onDelete = { viewModel.deleteAccount(account.id) },
+                        onUnlink = { alias -> viewModel.unlinkAccount(alias) },
                         onMove = { newType -> viewModel.updateAccount(account.id, account.name, account.icon, newType) }
                     )
                 }
@@ -118,6 +120,7 @@ fun AccountManagementScreen(
                         onEdit = { editingAccount = account },
                         onMerge = { mergingAccount = account },
                         onDelete = { viewModel.deleteAccount(account.id) },
+                        onUnlink = { alias -> viewModel.unlinkAccount(alias) },
                         onMove = { newType -> viewModel.updateAccount(account.id, account.name, account.icon, newType) }
                     )
                 }
@@ -187,6 +190,7 @@ fun AccountRow(
     onEdit: () -> Unit,
     onMerge: () -> Unit,
     onDelete: () -> Unit,
+    onUnlink: (String) -> Unit,
     onMove: (String) -> Unit
 ) {
     var showMoveMenu by remember { mutableStateOf(false) }
@@ -277,10 +281,27 @@ fun AccountRow(
                 ) {
                     Text("Linked Duplicates / Aliases:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     aliases.forEach { alias ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Link, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)
-                            Spacer(Modifier.width(8.dp))
-                            Text(alias.alias, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Rounded.Link, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.width(8.dp))
+                                Text(alias.alias, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(
+                                onClick = { onUnlink(alias.alias) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.LinkOff,
+                                    contentDescription = "Unlink",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                                )
+                            }
                         }
                     }
                 }

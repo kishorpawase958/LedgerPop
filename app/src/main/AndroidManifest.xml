@@ -109,6 +109,67 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/filepaths" />
         </provider>
+
+        <!-- Widgets -->
+        <receiver android:name=".widget.AddTransactionWidgetLight"
+            android:label="Add Transaction (Light)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_add_txn_light" />
+        </receiver>
+
+        <receiver android:name=".widget.AddTransactionWidgetDark"
+            android:label="Add Transaction (Dark)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_add_txn_dark" />
+        </receiver>
+
+        <receiver android:name=".widget.SpendsSummaryWidgetLight"
+            android:label="Spends Summary (Light)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_spends_light" />
+        </receiver>
+
+        <receiver android:name=".widget.SpendsSummaryWidgetDark"
+            android:label="Spends Summary (Dark)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_spends_dark" />
+        </receiver>
+
+        <receiver android:name=".widget.CombinedSpendsWidgetLight"
+            android:label="Spends + Add (Light)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_combined_light" />
+        </receiver>
+
+        <receiver android:name=".widget.CombinedSpendsWidgetDark"
+            android:label="Spends + Add (Dark)"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_combined_dark" />
+        </receiver>
     </application>
 
 </manifest>

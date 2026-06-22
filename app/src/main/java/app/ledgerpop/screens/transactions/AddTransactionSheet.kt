@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
@@ -131,9 +132,14 @@ fun AddTransactionDialog(
 
     val amountColor = if (isExpense) MaterialTheme.colorScheme.error else Color(0xFF00B894)
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
@@ -189,6 +195,16 @@ fun AddTransactionDialog(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val isNeg = amount.startsWith("-")
+                        val absAmount = if (isNeg) amount.substring(1) else amount
+
+                        if (isNeg) {
+                            Text(
+                                text = "-",
+                                style = MaterialTheme.typography.displayMedium,
+                                color = if (amountError) MaterialTheme.colorScheme.error else amountColor
+                            )
+                        }
                         Text(
                             text = "₹",
                             style = MaterialTheme.typography.displayMedium,
@@ -196,13 +212,16 @@ fun AddTransactionDialog(
                         )
                         Spacer(Modifier.width(4.dp))
                         BasicTextField(
-                            value = amount,
+                            value = absAmount,
                             onValueChange = { input ->
-                                val filtered = input.filter { it.isDigit() || it == '.' }
+                                val typedMinus = input.count { it == '-' } > 0
+                                val cleanInput = input.replace("-", "")
+                                val filtered = cleanInput.filter { it.isDigit() || it == '.' }
                                 if (filtered.count { it == '.' } <= 1) {
                                     val afterDecimal = filtered.substringAfter(".", "")
                                     if (afterDecimal.length <= 2 && filtered.length <= 12) {
-                                        amount = filtered
+                                        val newIsNeg = if (typedMinus) !isNeg else isNeg
+                                        amount = (if (newIsNeg) "-" else "") + filtered
                                         amountError = false
                                     }
                                 }
@@ -216,7 +235,7 @@ fun AddTransactionDialog(
                             singleLine = true,
                             modifier = Modifier.width(IntrinsicSize.Min).defaultMinSize(minWidth = 20.dp),
                             decorationBox = { innerTextField ->
-                                if (amount.isEmpty()) {
+                                if (absAmount.isEmpty()) {
                                     Text(
                                         text = "0",
                                         style = MaterialTheme.typography.displayLarge.copy(
@@ -321,7 +340,7 @@ fun AddTransactionDialog(
                     Button(
                         onClick = {
                             val parsed = amount.toDoubleOrNull()
-                            if (parsed == null || parsed <= 0) {
+                            if (parsed == null || parsed == 0.0) {
                                 amountError = true
                                 return@Button
                             }

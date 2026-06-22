@@ -14,10 +14,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.util.Locale
 
 data class HomeInsight(val icon: String, val title: String, val message: String)
 
 data class CategoryAggregate(val category: String, val amount: Double)
+
+enum class IncomeBenchmark {
+    CURRENT_MONTH, PREVIOUS_MONTH
+}
 
 data class HomeUiState(
     val recentTransactions: List<SmsTransactionEntity> = emptyList(),
@@ -31,6 +36,8 @@ data class HomeUiState(
     val thisMonthBalance: Double = 0.0,
     val thisMonthInvestment: Double = 0.0,
     val lastMonthExpense: Double = 0.0,
+    val lastMonthIncome: Double = 0.0,
+    val incomeBenchmark: IncomeBenchmark = IncomeBenchmark.PREVIOUS_MONTH,
     val insights: List<HomeInsight> = emptyList(),
     val monthlyBudget: Double = 0.0,
     val userName: String = "User",
@@ -78,11 +85,20 @@ class HomeViewModel(
             val cal = Calendar.getInstance()
             getCurrentMonthBudget(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH))
         },
-        userName = sharedPrefs.getString("user_name", "User") ?: "User"
+        userName = sharedPrefs.getString("user_name", "User") ?: "User",
+        incomeBenchmark = try {
+            IncomeBenchmark.valueOf(sharedPrefs.getString("income_benchmark", IncomeBenchmark.PREVIOUS_MONTH.name) ?: IncomeBenchmark.PREVIOUS_MONTH.name)
+        } catch (_: Exception) {
+            IncomeBenchmark.PREVIOUS_MONTH
+        }
     ))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        refreshData()
+    }
+
+    private fun refreshData() {
         viewModelScope.launch {
             repository.getAllTransactions().collect { all ->
                 val billable = all.filter { it.isBillable }
@@ -120,6 +136,10 @@ class HomeViewModel(
                     .filter { it.type == "DEBIT" && txnMonth(it) == lastMonth && txnYear(it) == lastYear }
                     .sumOf { it.amount }
 
+                val lastMonthIncome = billable
+                    .filter { it.type == "CREDIT" && txnMonth(it) == lastMonth && txnYear(it) == lastYear }
+                    .sumOf { it.amount }
+
                 val thisMonthDebits = billable.filter {
                     it.type == "DEBIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear
                 }
@@ -140,14 +160,20 @@ class HomeViewModel(
                     .sortedByDescending { it.amount }
                     .take(3)
 
+                val currentBenchmark = _uiState.value.incomeBenchmark
+                val baselineIncome = if (currentBenchmark == IncomeBenchmark.PREVIOUS_MONTH && lastMonthIncome > 0) {
+                    lastMonthIncome
+                } else {
+                    thisMonthIncome
+                }
+
                 val insights = buildInsights(
-                    income = thisMonthIncome,
+                    income = baselineIncome,
                     expense = thisMonthExpense,
                     thisMonthExpense = thisMonthExpense,
                     lastMonthExpense = lastMonthExpense,
                     thisMonthIncome = thisMonthIncome,
-                    thisMonthInvestment = thisMonthInvestment,
-                    transactions = billable.filter { txnMonth(it) == thisMonth && txnYear(it) == thisYear }
+                    thisMonthInvestment = thisMonthInvestment
                 )
 
                 _uiState.update {
@@ -163,6 +189,7 @@ class HomeViewModel(
                         thisMonthBalance = thisMonthIncome - thisMonthExpense,
                         thisMonthInvestment = thisMonthInvestment,
                         lastMonthExpense = lastMonthExpense,
+                        lastMonthIncome = lastMonthIncome,
                         insights = insights,
                         monthlyBudget = getCurrentMonthBudget(thisYear, thisMonth),
                         isLoading = false
@@ -193,24 +220,32 @@ class HomeViewModel(
         _uiState.update { it.copy(monthlyBudget = budget) }
     }
 
+    fun updateIncomeBenchmark(benchmark: IncomeBenchmark) {
+        sharedPrefs.edit {
+            putString("income_benchmark", benchmark.name)
+        }
+        _uiState.update { it.copy(incomeBenchmark = benchmark) }
+        refreshData()
+    }
+
     private fun buildInsights(
         income: Double,
         expense: Double,
         thisMonthExpense: Double,
         lastMonthExpense: Double,
         thisMonthIncome: Double,
-        thisMonthInvestment: Double,
-        transactions: List<SmsTransactionEntity>
+        thisMonthInvestment: Double
     ): List<HomeInsight> {
         val list = mutableListOf<HomeInsight>()
 
         if (thisMonthIncome > 0 && thisMonthInvestment > 0) {
             val percentage = ((thisMonthInvestment / thisMonthIncome) * 100).toInt()
+            val monthName = Calendar.getInstance().getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
             list.add(
                 HomeInsight(
-                    "💸",
-                    "INVESTMENTS",
-                    "You have invested $percentage% of your income"
+                    "👏",
+                    "Money Invested",
+                    "You have invested $percentage% of your income in $monthName"
                 )
             )
         }
@@ -228,40 +263,20 @@ class HomeViewModel(
             }
         }
 
-        if (lastMonthExpense > 0 && thisMonthExpense > lastMonthExpense * 1.2) {
-            list.add(
-                HomeInsight(
-                    "📈",
-                    "MONTHLY TREND",
-                    "Spending is up 20%+ vs last month"
+        if (lastMonthExpense > 0) {
+            val diffPct = (((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100).toInt()
+             if (diffPct <= -10) {
+                list.add(
+                    HomeInsight(
+                        "🎉",
+                        "SAVINGS",
+                        "Great job! Spending is down ${-diffPct}% vs last month"
+                    )
                 )
-            )
+            }
         }
 
-        if (lastMonthExpense > 0 && thisMonthExpense < lastMonthExpense * 0.8) {
-            list.add(
-                HomeInsight(
-                    "🎉",
-                    "SAVINGS",
-                    "Great job! Spending down vs last month"
-                )
-            )
-        }
 
-        val topCategory = transactions
-            .filter { it.type == "DEBIT" }
-            .groupBy { it.category }
-            .maxByOrNull { it.value.sumOf { t -> t.amount } }
-
-        if (topCategory != null && topCategory.key.isNotBlank()) {
-            list.add(
-                HomeInsight(
-                    "🏷️",
-                    "TOP CATEGORY",
-                    "Main spend: ${topCategory.key}"
-                )
-            )
-        }
 
         return list
     }

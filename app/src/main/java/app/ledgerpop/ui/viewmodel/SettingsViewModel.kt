@@ -368,6 +368,25 @@ class SettingsViewModel(
         }
     }
 
+    fun unlinkAccount(alias: String) {
+        viewModelScope.launch {
+            val targetName = db.accountAliasDao().getTargetName(alias)
+            val targetAccount = targetName?.let { db.accountDao().getByName(it) }
+
+            // Create a new account with the alias name so it's not lost
+            db.accountDao().insert(
+                AccountEntity(
+                    name = alias,
+                    icon = targetAccount?.icon ?: "🏦",
+                    type = targetAccount?.type ?: "BANK"
+                )
+            )
+            
+            // Remove the alias link
+            db.accountAliasDao().deleteByAlias(alias)
+        }
+    }
+
     fun clearImportResult() {
         _uiState.update { it.copy(lastImportResult = null, lastImportMessage = "") }
     }

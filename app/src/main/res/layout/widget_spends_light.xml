@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="@drawable/widget_bg_light">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Spends Today"
+            android:textSize="12sp"
+            android:textColor="@color/widget_text_secondary_light"/>
+
+        <TextView
+            android:id="@+id/tv_spends_today"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="$0.00"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/widget_text_primary_light"/>
+    </LinearLayout>
+
+    <!-- Separator using FrameLayout instead of View -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#15000000"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="This Month"
+            android:textSize="12sp"
+            android:textColor="@color/widget_text_secondary_light"/>
+
+        <TextView
+            android:id="@+id/tv_spends_month"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="$0.00"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/widget_accent"/>
+    </LinearLayout>
+</LinearLayout>

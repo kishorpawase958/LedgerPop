@@ -268,12 +268,14 @@ fun TransactionDetailScreen(
                     BasicTextField(
                         value = absAmount,
                         onValueChange = { input ->
-                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            val typedMinus = input.count { it == '-' } > 0
+                            val cleanInput = input.replace("-", "")
+                            val filtered = cleanInput.filter { it.isDigit() || it == '.' }
                             if (filtered.count { it == '.' } <= 1) {
                                 val afterDecimal = filtered.substringAfter(".", "")
                                 if (afterDecimal.length <= 2 && filtered.length <= 12) {
-                                    // Preserve the negative sign if it exists when editing the absolute part
-                                    amount = (if (isNeg) "-" else "") + filtered
+                                    val newIsNeg = if (typedMinus) !isNeg else isNeg
+                                    amount = (if (newIsNeg) "-" else "") + filtered
                                 }
                             }
                         },
