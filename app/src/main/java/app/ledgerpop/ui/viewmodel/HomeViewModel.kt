@@ -169,10 +169,8 @@ class HomeViewModel(
 
                 val insights = buildInsights(
                     income = baselineIncome,
-                    expense = thisMonthExpense,
                     thisMonthExpense = thisMonthExpense,
                     lastMonthExpense = lastMonthExpense,
-                    thisMonthIncome = thisMonthIncome,
                     thisMonthInvestment = thisMonthInvestment
                 )
 
@@ -230,28 +228,25 @@ class HomeViewModel(
 
     private fun buildInsights(
         income: Double,
-        expense: Double,
         thisMonthExpense: Double,
         lastMonthExpense: Double,
-        thisMonthIncome: Double,
         thisMonthInvestment: Double
     ): List<HomeInsight> {
         val list = mutableListOf<HomeInsight>()
 
-        if (thisMonthIncome > 0 && thisMonthInvestment > 0) {
-            val percentage = ((thisMonthInvestment / thisMonthIncome) * 100).toInt()
-            val monthName = Calendar.getInstance().getDisplayName(Calendar.MONTH, Calendar.LONG, Locale.getDefault())
+        if (income > 0 && thisMonthInvestment > 0) {
+            val percentage = ((thisMonthInvestment / income) * 100).toInt()
             list.add(
                 HomeInsight(
                     "👏",
-                    "Money Invested",
-                    "You have invested $percentage% of your income in $monthName"
+                    "MONEY INVESTED",
+                    "You have invested $percentage% of your income"
                 )
             )
         }
 
         if (income > 0) {
-            val spentPct = ((expense / income) * 100).toInt()
+            val spentPct = ((thisMonthExpense / income) * 100).toInt()
             if (spentPct > 75) {
                 list.add(
                     HomeInsight(
@@ -265,7 +260,7 @@ class HomeViewModel(
 
         if (lastMonthExpense > 0) {
             val diffPct = (((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100).toInt()
-             if (diffPct <= -10) {
+             if (diffPct < 0) {
                 list.add(
                     HomeInsight(
                         "🎉",
