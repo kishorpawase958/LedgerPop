@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -25,11 +26,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.ui.components.BulkUpdateDialog
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -38,16 +42,27 @@ import androidx.compose.ui.platform.LocalLocale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransactionDetailSheet(
+fun TransactionDetailScreen(
     txn: SmsTransactionEntity,
     onDismiss: () -> Unit,
     onSave: (SmsTransactionEntity) -> Unit,
     onDelete: (SmsTransactionEntity) -> Unit,
     onNavigateToTransaction: (Int) -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val db = remember { LedgerPopDatabase.getInstance(context) }
-    val scope = rememberCoroutineScope()
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            val context = LocalContext.current
+            val db = remember { LedgerPopDatabase.getInstance(context) }
+            val scope = rememberCoroutineScope()
 
     val linkedCredits by produceState(initialValue = emptyList<SmsTransactionEntity>(), txn.id) {
         db.smsTransactionDao().getLinkedCredits(txn.id).collect { value = it }
@@ -100,9 +115,7 @@ fun TransactionDetailSheet(
     }
 
     var amount by remember(txn) { 
-        val amt = txn.amount
-        val s = if (amt == amt.toLong().toDouble()) amt.toLong().toString() else amt.toString()
-        mutableStateOf(s) 
+        mutableStateOf(AmountUtils.formatRaw(txn.amount)) 
     }
     var merchant by remember(txn) { mutableStateOf(txn.merchant) }
     var category by remember(txn) { mutableStateOf(txn.category) }
@@ -118,6 +131,10 @@ fun TransactionDetailSheet(
     var showAccountPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showLinkPicker by remember { mutableStateOf(false) }
+    
+    var showBulkUpdateDialog by remember { mutableStateOf(false) }
+    var similarTxnsToUpdate by remember { mutableStateOf<List<SmsTransactionEntity>>(emptyList()) }
+    var pendingSavedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
     val dateStr = remember(selectedDateMillis) {
         SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(Date(selectedDateMillis))
@@ -128,38 +145,21 @@ fun TransactionDetailSheet(
 
     val amountColor = if (isExpense) MaterialTheme.colorScheme.error else Color(0xFF00B894)
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
-        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            // Header Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text(
-                    "Transaction",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Button(
-                    onClick = {
-                        val amt = amount.toDoubleOrNull() ?: return@Button
-                        onSave(
-                            txn.copy(
+    Scaffold(
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Transaction Details", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = {
+                            val amt = amount.toDoubleOrNull() ?: return@TextButton
+                            val updatedTxn = txn.copy(
                                 amount = amt,
                                 type = if (isExpense) "DEBIT" else "CREDIT",
                                 merchant = merchant,
@@ -170,16 +170,59 @@ fun TransactionDetailSheet(
                                 note = note.trim(),
                                 originalAmount = originalAmount
                             )
-                        )
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Text("Save")
-                }
-            }
 
-            Spacer(Modifier.height(24.dp))
+                            // Check if merchant or category changed
+                            val oldMerchant = txn.merchant.trim()
+                            val newMerchant = merchant.trim()
+                            val merchantChanged = newMerchant != oldMerchant
+                            val categoryChanged = category.trim() != txn.category.trim()
+
+                            if ((merchantChanged || categoryChanged) && newMerchant.length >= 3) {
+                                scope.launch {
+                                    val similarToNew = db.smsTransactionDao().getSimilarTransactions(newMerchant, txn.id)
+                                    val similarToOld = if (merchantChanged && oldMerchant.length >= 3) {
+                                        db.smsTransactionDao().getSimilarTransactions(oldMerchant, txn.id)
+                                    } else emptyList()
+                                    
+                                    val allSimilar = (similarToNew + similarToOld).distinctBy { it.id }
+                                    val filtered = allSimilar.filter { 
+                                        it.category != category.trim() || (merchantChanged && it.merchant.trim() != newMerchant)
+                                    }
+
+                                    if (filtered.isNotEmpty()) {
+                                        pendingSavedTxn = updatedTxn
+                                        similarTxnsToUpdate = filtered
+                                        showBulkUpdateDialog = true
+                                    } else {
+                                        onSave(updatedTxn)
+                                    }
+                                }
+                            } else {
+                                onSave(updatedTxn)
+                            }
+                        }
+                    ) {
+                        Text("Save", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(rememberScrollState())
+                .padding(innerPadding)
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 120.dp) // Increased to clear floating nav bars
+        ) {
+
+            // Removed extra top spacer to fix unnecessary empty space at top
 
             // Large Amount Input Section
             Column(
@@ -206,6 +249,16 @@ fun TransactionDetailSheet(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val isNeg = amount.startsWith("-")
+                    val absAmount = if (isNeg) amount.substring(1) else amount
+
+                    if (isNeg) {
+                        Text(
+                            text = "-",
+                            style = MaterialTheme.typography.displayMedium,
+                            color = amountColor
+                        )
+                    }
                     Text(
                         text = "₹",
                         style = MaterialTheme.typography.displayMedium,
@@ -213,13 +266,16 @@ fun TransactionDetailSheet(
                     )
                     Spacer(Modifier.width(4.dp))
                     BasicTextField(
-                        value = amount,
+                        value = absAmount,
                         onValueChange = { input ->
-                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            val typedMinus = input.count { it == '-' } > 0
+                            val cleanInput = input.replace("-", "")
+                            val filtered = cleanInput.filter { it.isDigit() || it == '.' }
                             if (filtered.count { it == '.' } <= 1) {
                                 val afterDecimal = filtered.substringAfter(".", "")
                                 if (afterDecimal.length <= 2 && filtered.length <= 12) {
-                                    amount = filtered
+                                    val newIsNeg = if (typedMinus) !isNeg else isNeg
+                                    amount = (if (newIsNeg) "-" else "") + filtered
                                 }
                             }
                         },
@@ -231,7 +287,7 @@ fun TransactionDetailSheet(
                         singleLine = true,
                         modifier = Modifier.width(IntrinsicSize.Min).defaultMinSize(minWidth = 20.dp),
                         decorationBox = { innerTextField ->
-                            if (amount.isEmpty()) {
+                            if (absAmount.isEmpty()) {
                                 Text(
                                     text = "0",
                                     style = MaterialTheme.typography.displayLarge.copy(
@@ -251,7 +307,7 @@ fun TransactionDetailSheet(
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
                         Text(
-                            text = "Original: ₹${AmountUtils.formatAmount(originalAmount ?: 0.0)}",
+                            text = "Original: ${AmountUtils.formatWithCurrency(originalAmount ?: 0.0)}",
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -416,7 +472,7 @@ fun TransactionDetailSheet(
                                 val newAmount = baseOriginal - sumOfRemaining
                                 val finalOriginal = if (newAmount == baseOriginal) null else baseOriginal
                                 db.smsTransactionDao().update(txn.copy(amount = newAmount, originalAmount = finalOriginal))
-                                amount = if (newAmount == newAmount.toLong().toDouble()) newAmount.toLong().toString() else newAmount.toString()
+                                amount = AmountUtils.formatRaw(newAmount)
                                 originalAmount = finalOriginal
                             }
                         })
@@ -462,7 +518,7 @@ fun TransactionDetailSheet(
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(16.dp))
 
             // Delete Button
             TextButton(
@@ -634,13 +690,38 @@ fun TransactionDetailSheet(
                     val sumOfCredits = allLinked.sumOf { it.amount }
                     val newAmount = baseOriginal - sumOfCredits
                     db.smsTransactionDao().update(txn.copy(amount = newAmount, originalAmount = baseOriginal))
-                    amount = if (newAmount == newAmount.toLong().toDouble()) newAmount.toLong().toString() else newAmount.toString()
+                    amount = AmountUtils.formatRaw(newAmount)
                     originalAmount = baseOriginal
                 }
                 showLinkPicker = false
             }
         )
     }
+
+    if (showBulkUpdateDialog && pendingSavedTxn != null) {
+        BulkUpdateDialog(
+            newMerchantName = merchant,
+            newCategory = category,
+            similarTransactions = similarTxnsToUpdate,
+            onDismiss = {
+                onSave(pendingSavedTxn!!)
+                showBulkUpdateDialog = false
+            },
+            onApply = { selectedIds, updateMerchant, updateCategory ->
+                scope.launch {
+                    when {
+                        updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                        updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
+                        updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                    }
+                    onSave(pendingSavedTxn!!)
+                    showBulkUpdateDialog = false
+                }
+            }
+        )
+    }
+}
+}
 }
 
 @Composable
@@ -733,7 +814,7 @@ fun LinkRow(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(txn.merchant.ifBlank { txn.sender }, style = MaterialTheme.typography.bodyMedium)
-                Text("$dateStr · ₹${AmountUtils.formatAmount(txn.amount)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Text("$dateStr · ${AmountUtils.formatWithCurrency(txn.amount)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 if (txn.note.isNotBlank()) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -781,7 +862,7 @@ fun LinkPickerDialog(
                         val dateStr = SimpleDateFormat("d MMM yy", LocalLocale.current.platformLocale).format(Date(txn.transactionTime))
                         ListItem(
                             headlineContent = { Text(txn.merchant.ifBlank { txn.sender }) },
-                            supportingContent = { Text("$dateStr · ₹${AmountUtils.formatAmount(txn.amount)}") },
+                            supportingContent = { Text("$dateStr · ${AmountUtils.formatWithCurrency(txn.amount)}") },
                             modifier = Modifier.clickable { onSelect(txn) }
                         )
                     }

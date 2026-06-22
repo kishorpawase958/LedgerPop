@@ -9,6 +9,10 @@ enum class AppTheme {
     AUTO, LIGHT, DARK, MIDNIGHT
 }
 
+enum class AppLogo {
+    DEFAULT, LIGHT, DARK, NAVY
+}
+
 data class SettingsUiState(
     val isImporting: Boolean = false,
     val isClearing: Boolean = false,
@@ -25,6 +29,7 @@ data class SettingsUiState(
     val hasReceiveSmsPermission: Boolean = false,
     val hasNotificationsPermission: Boolean = false,
     val appTheme: AppTheme = AppTheme.AUTO,
+    val appLogo: AppLogo = AppLogo.DEFAULT,
     val customCategories: List<CustomCategoryEntity> = emptyList(),
     val accounts: List<AccountEntity> = emptyList(),
     val accountAliases: List<AccountAliasEntity> = emptyList(),

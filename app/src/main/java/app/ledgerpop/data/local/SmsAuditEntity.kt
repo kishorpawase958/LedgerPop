@@ -1,6 +1,7 @@
 package app.ledgerpop.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -8,7 +9,10 @@ import androidx.room.PrimaryKey
  * status: "IMPORTED" | "SKIPPED" | "PARSE_FAILED"
  * reportType: null | "FALSE_POSITIVE" (wrongly imported) | "FALSE_NEGATIVE" (wrongly skipped)
  */
-@Entity(tableName = "sms_audit")
+@Entity(
+    tableName = "sms_audit",
+    indices = [Index(value = ["hashKey"], unique = true)]
+)
 data class SmsAuditEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val sender: String,

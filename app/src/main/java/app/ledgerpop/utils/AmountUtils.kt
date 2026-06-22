@@ -16,15 +16,33 @@ object AmountUtils {
 
     /**
      * Formats an amount using Indian Numbering System (e.g., 10,00,000.00).
-     * Always returns absolute value formatted as string.
+     * Returns the absolute value as a string.
      */
     fun formatAmount(amount: Double): String {
         return formatter.format(kotlin.math.abs(amount))
     }
 
     /**
+     * Formats with currency symbol, placing negative sign before the symbol.
+     */
+    fun formatWithCurrency(amount: Double): String {
+        val formatted = formatter.format(kotlin.math.abs(amount))
+        return if (amount < 0) "-₹$formatted" else "₹$formatted"
+    }
+
+    /**
+     * Returns a raw string for editing, with up to 2 decimal places and no commas.
+     */
+    fun formatRaw(amount: Double): String {
+        val res = "%.2f".format(Locale.US, amount)
+        return if (res.contains(".")) {
+            res.trimEnd('0').trimEnd('.')
+        } else res
+    }
+
+    /**
      * A VisualTransformation for Indian Numbering System.
-     * Expects a string containing only digits and at most one decimal point.
+     * Expects a string containing digits, optional leading minus, and at most one decimal point.
      */
     val indianCurrencyTransformation = VisualTransformation { text ->
         val originalText = text.text
@@ -32,7 +50,10 @@ object AmountUtils {
             return@VisualTransformation TransformedText(AnnotatedString(""), OffsetMapping.Identity)
         }
 
-        val parts = originalText.split(".")
+        val isNegative = originalText.startsWith("-")
+        val cleanText = if (isNegative) originalText.substring(1) else originalText
+
+        val parts = cleanText.split(".")
         val integerPart = parts[0]
         val decimalPart = if (parts.size > 1) "." + parts[1] else ""
 
@@ -48,23 +69,12 @@ object AmountUtils {
             result.reverse().toString()
         }
 
-        val out = formattedInt + decimalPart
+        val out = (if (isNegative) "-" else "") + formattedInt + decimalPart
         
         val offsetMapping = object : OffsetMapping {
             override fun originalToTransformed(offset: Int): Int {
                 if (offset <= 0) return 0
                 
-                // Calculate how many commas are added before the given offset in integerPart
-                val intOffset = if (offset > integerPart.length) integerPart.length else offset
-                var commasBefore = 0
-                val reversedInt = integerPart.reversed()
-                for (i in 0 until intOffset) {
-                    val reversedIdx = integerPart.length - 1 - i
-                    // Grouping: 3, 2, 2... from right
-                    // i is index from left. 
-                }
-                
-                // Simpler: iterate through the transformation and count non-comma chars
                 var transformedOffset = 0
                 var originalCharCount = 0
                 while (transformedOffset < out.length && originalCharCount < offset) {

@@ -2,10 +2,12 @@ package app.ledgerpop.data.local
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "sms_transactions",
+    indices = [Index(value = ["hashKey"], unique = true)],
     foreignKeys = [
         ForeignKey(
             entity = SmsTransactionEntity::class,

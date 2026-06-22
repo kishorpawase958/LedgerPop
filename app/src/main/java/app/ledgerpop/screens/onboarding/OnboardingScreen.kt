@@ -20,11 +20,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.res.painterResource
+import app.ledgerpop.R
+
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit,
 ) {
     val context = LocalContext.current
+
+    val logoPainter = remember {
+        val drawable = ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+        val bitmap = Bitmap.createBitmap(
+            drawable!!.intrinsicWidth.coerceAtLeast(1),
+            drawable.intrinsicHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        BitmapPainter(bitmap.asImageBitmap())
+    }
     
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -64,11 +85,10 @@ fun OnboardingScreen(
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Rounded.Sms,
+                    androidx.compose.foundation.Image(
+                        painter = logoPainter,
                         contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                        modifier = Modifier.size(64.dp)
                     )
                 }
             }

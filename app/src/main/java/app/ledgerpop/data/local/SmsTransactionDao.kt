@@ -33,6 +33,15 @@ interface SmsTransactionDao {
     @Query("SELECT COUNT(*) FROM sms_transactions WHERE hashKey = :hashKey")
     suspend fun exists(hashKey: String): Int
 
+    @Query("""
+        SELECT COUNT(*) FROM sms_transactions 
+        WHERE sender = :sender 
+        AND body = :body 
+        AND amount = :amount 
+        AND ABS(transactionTime - :timestamp) < 10000
+    """)
+    suspend fun existsDuplicate(sender: String, body: String, amount: Double, timestamp: Long): Int
+
     @Query("DELETE FROM sms_transactions")
     suspend fun clearAll()
 
@@ -84,4 +93,21 @@ interface SmsTransactionDao {
         ORDER BY transactionTime DESC LIMIT 1
     """)
     suspend fun getLastCategoryForMerchantFuzzy(merchant: String): String?
+
+    @Query("""
+        SELECT * FROM sms_transactions 
+        WHERE (merchant = :merchant COLLATE NOCASE OR :merchant LIKE merchant || '%' OR merchant LIKE :merchant || '%')
+        AND id != :excludeId
+        ORDER BY transactionTime DESC
+    """)
+    suspend fun getSimilarTransactions(merchant: String, excludeId: Int): List<SmsTransactionEntity>
+
+    @Query("UPDATE sms_transactions SET category = :category WHERE id IN (:ids)")
+    suspend fun updateCategoryForIds(ids: List<Int>, category: String)
+
+    @Query("UPDATE sms_transactions SET merchant = :merchant WHERE id IN (:ids)")
+    suspend fun updateMerchantForIds(ids: List<Int>, merchant: String)
+
+    @Query("UPDATE sms_transactions SET category = :category, merchant = :merchant WHERE id IN (:ids)")
+    suspend fun updateMerchantAndCategoryForIds(ids: List<Int>, merchant: String, category: String)
 }

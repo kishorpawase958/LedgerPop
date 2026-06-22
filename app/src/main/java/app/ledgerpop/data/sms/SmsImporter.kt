@@ -12,6 +12,7 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.local.AccountAliasDao
 import app.ledgerpop.data.local.AccountDao
 import app.ledgerpop.data.local.AccountEntity
+import app.ledgerpop.data.local.SmartRuleDao
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.parser.SmsParser
 
@@ -28,7 +29,8 @@ class SmsImporter(
     private val dao: SmsTransactionDao,
     private val auditDao: SmsAuditDao,
     private val aliasDao: AccountAliasDao? = null,
-    private val accountDao: AccountDao? = null
+    private val accountDao: AccountDao? = null,
+    private val smartRuleDao: SmartRuleDao? = null
 ) {
 
     private val TAG = "LedgerPop"
@@ -73,6 +75,12 @@ class SmsImporter(
         return CategoryEngine.categorize(merchant, body, sender)
     }
 
+    private suspend fun getSmartAction(sender: String, body: String): String? {
+        val structure = SmsParser.getStructure(body)
+        val rules = smartRuleDao?.getBySender(sender) ?: return null
+        return rules.find { it.bodyStructure == structure }?.ruleType
+    }
+
     suspend fun importInbox(
         fromMillis: Long? = null,
         toMillis: Long? = null
@@ -98,8 +106,26 @@ class SmsImporter(
             if (toMillis != null && msg.timestamp > toMillis) continue
 
             scanned++
-            val shouldProcess = SmsFilter.shouldProcess(msg.sender, msg.body)
-            val reason = SmsFilter.skipReason(msg.sender, msg.body)
+
+            // If it's already in audit, skip completely
+            if (auditDao.existsDuplicate(msg.sender, msg.body, msg.timestamp) > 0) {
+                skipped++
+                continue
+            }
+
+            val smartAction = getSmartAction(msg.sender, msg.body)
+
+            val shouldProcess = when (smartAction) {
+                "ALWAYS_IMPORT" -> true
+                "ALWAYS_SKIP" -> false
+                else -> SmsFilter.shouldProcess(msg.sender, msg.body)
+            }
+
+            val reason = when (smartAction) {
+                "ALWAYS_IMPORT" -> "Smart Rule: ALWAYS_IMPORT"
+                "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
+                else -> SmsFilter.skipReason(msg.sender, msg.body)
+            }
 
             if (!shouldProcess) {
                 val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
@@ -119,7 +145,8 @@ class SmsImporter(
                 continue
             }
 
-            val parsed = SmsParser.parse(msg.sender, msg.body)
+            // If it's a smart import, we might need to ignore the internal spam check in SmsParser
+            val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
             if (parsed == null) {
                 val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
                 auditToInsert.add(
@@ -138,8 +165,8 @@ class SmsImporter(
                 continue
             }
 
-            val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type)
-            if (dao.exists(hashKey) > 0) {
+            val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
+            if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
                 skipped++
                 continue
             }
@@ -187,13 +214,29 @@ class SmsImporter(
     }
 
     suspend fun importSingle(msg: SmsMessage): SmsTransactionEntity? {
-        val shouldProcess = SmsFilter.shouldProcess(msg.sender, msg.body)
-        val reason = SmsFilter.skipReason(msg.sender, msg.body)
+        val smartAction = getSmartAction(msg.sender, msg.body)
+
+        val shouldProcess = when (smartAction) {
+            "ALWAYS_IMPORT" -> true
+            "ALWAYS_SKIP" -> false
+            else -> SmsFilter.shouldProcess(msg.sender, msg.body)
+        }
+
+        val reason = when (smartAction) {
+            "ALWAYS_IMPORT" -> "Smart Rule: ALWAYS_IMPORT"
+            "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
+            else -> SmsFilter.skipReason(msg.sender, msg.body)
+        }
 
         Log.d(
             TAG,
-            "Processing: sender=${msg.sender} | filter=$shouldProcess | reason=$reason | body=${msg.body.take(120)}"
+            "Processing: sender=${msg.sender} | smartAction=$smartAction | filter=$shouldProcess | reason=$reason | body=${msg.body.take(120)}"
         )
+
+        if (auditDao.existsDuplicate(msg.sender, msg.body, msg.timestamp) > 0) {
+            Log.d(TAG, "Duplicate audit entry skipped")
+            return null
+        }
 
         if (!shouldProcess) {
             val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
@@ -214,7 +257,7 @@ class SmsImporter(
         }
 
         // The upgraded Parser now returns the beautifully formatted Account Name and Auto-Category
-        val parsed = SmsParser.parse(msg.sender, msg.body)
+        val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
 
         if (parsed == null) {
             val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
@@ -234,9 +277,9 @@ class SmsImporter(
             return null
         }
 
-        val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type)
+        val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
 
-        if (dao.exists(hashKey) > 0) {
+        if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
             Log.d(TAG, "Duplicate skipped: $hashKey")
             return null
         }
@@ -286,8 +329,14 @@ class SmsImporter(
         sender: String,
         timestamp: Long,
         amount: Double,
-        type: String
+        type: String,
+        refNo: String = ""
     ): String {
-        return "${sender}_${timestamp}_${amount}_${type}"
+        if (refNo.isNotBlank()) {
+            return "${sender}_${refNo}_${amount}_${type}"
+        }
+        // Use a 5-second window to handle slight discrepancies between receiver and content provider
+        val rounded = (timestamp / 5000) * 5000
+        return "${sender}_${rounded}_${amount}_${type}"
     }
 }

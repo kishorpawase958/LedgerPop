@@ -11,7 +11,8 @@ data class ParsedSmsTransaction(
     val bank: String,
     val accountName: String,
     val category: String,
-    val includeInAnalytics: Boolean = true
+    val includeInAnalytics: Boolean = true,
+    val refNo: String = ""
 )
 
 object SmsParser {
@@ -20,12 +21,24 @@ object SmsParser {
         // Prefer INR Equivalent for international transactions
         Regex("""(?:Inr Equiv Approx|Inr Equiv|Equiv\.? INR)\s*(?:INR|Rs\.?|₹|Rs:)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
         Regex("""(?:INR|Rs\.?|₹|Rs:)\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE),
-        Regex("""(?:debited by|debited from|debited for|credited by|credited to|credited with|credited for|payment of|spent on|spent|spend|paid from|for|of|withdrawn at)\s*(?:INR|Rs\.?|₹|Rs:)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
+        Regex("""(?:debited by|debited from|debited for|credited by|credited to|credited with|credited for|payment of|spent on|spent|spend|paid from|for|of|withdrawn at|txn of|transaction of)\s*(?:INR|Rs\.?|₹|Rs:)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
     )
 
-    private val debitKeywords = listOf("debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
-    private val creditKeywords = listOf("credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
-    private val spamKeywords = listOf("otp is", "otp for", "is your otp", "one time password for", "Reminder","cooling period","generated", "request", "require", "allot", "disburse", "declined", "failed", "unsuccessful", "insufficient", "will be", "due")
+    private val debitKeywords = listOf("debit","debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
+    private val creditKeywords = listOf("credit","credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
+    private val spamKeywords = listOf("kindly ignore if paid","otp is", "otp for", "is your otp", "one time password for", "Reminder","cooling period","generated", "request", "require", "allot", "disburse", "declined", "failed", "unsuccessful", "insufficient", "will be", "due")
+
+    /**
+     * Generalizes an SMS body to create a "structure" for smart learning.
+     * Replaces numbers with # to ignore specific amounts, dates, or account numbers.
+     */
+    fun getStructure(body: String): String {
+        return body.replace(Regex("""\d+"""), "#")
+            .replace("\n", " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .lowercase(Locale.getDefault())
+    }
 
     fun parse(sender: String, body: String, ignoreSpamCheck: Boolean = false): ParsedSmsTransaction? {
         val text = body.replace("\n", " ").replace(Regex("""\s+"""), " ").trim()
@@ -36,6 +49,8 @@ object SmsParser {
 
         val amount = extractAmount(text) ?: if (ignoreSpamCheck) 0.0 else return null
         val type = detectType(text) ?: if (ignoreSpamCheck) "DEBIT" else return null
+
+        val refNo = extractRefNo(text)
 
         // Extract Account Data
         val accountLast4 = extractAccountLast4(text)
@@ -75,8 +90,23 @@ object SmsParser {
             bank = cleanBankName,
             accountName = accountName,
             category = category,
-            includeInAnalytics = !isRepayment
+            includeInAnalytics = !isRepayment,
+            refNo = refNo
         )
+    }
+
+    private fun extractRefNo(text: String): String {
+        val patterns = listOf(
+            Regex("""(?i)(?:ref\s*no|ref|utr|txn\s*id|id|trans\s*id)[:\-\s]+([A-Z0-9]{6,20})"""),
+            Regex("""(?i)ref[:\-\s]*([A-Z0-9]{6,20})"""),
+            Regex("""(?i)No\.\s*([A-Z0-9]{8,20})""")
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            val ref = match?.groupValues?.getOrNull(1)
+            if (!ref.isNullOrBlank()) return ref
+        }
+        return ""
     }
 
     private fun extractAmount(text: String): Double? {
@@ -94,10 +124,10 @@ object SmsParser {
         val hasCredit = creditKeywords.any { lower.contains(it) }
 
         return when {
-            // Prioritize "withdrawn" as it's very specific to ATM/Cash withdrawals
-            lower.contains("withdrawn") -> "DEBIT"
+            // High priority debit indicators
+            lower.contains("debited") || lower.contains("spent") || lower.contains("withdrawn") || lower.contains("paid") || lower.contains("txn of") -> "DEBIT"
 
-            // Prioritize clear credit indicators
+            // High priority credit indicators
             lower.contains("credited") || lower.contains("received") -> "CREDIT"
 
             hasDebit && !hasCredit -> "DEBIT"
@@ -108,10 +138,13 @@ object SmsParser {
 
     private fun extractMerchant(text: String): String {
         // Stop words that indicate the end of a merchant name and the start of transaction details.
-        val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|to\s+dispute|to\s+raise)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))\.\s*|$)"""
+        val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|to\s+dispute|to\s+raise|fvg|favoring|favouring)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))\.\s*|$)"""
         val mChars = """A-Za-z0-9\s.&'/\-@*,"""
 
         val patterns = listOf(
+            // Recipient indicator (Strong for Union Bank and others)
+            Regex("""(?i)(?:fvg|favoring|favouring)[:\-]\s*([$mChars]{2,40}?)$lookahead"""),
+
             // SBI / Other banks "Transferred to"
             Regex("""(?i)Transferred to\s+([$mChars]{2,40}?)$lookahead"""),
             Regex("""(?i)(?:for|towards)\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at|subscription\s+at)\s+([$mChars]{2,40}?)$lookahead"""),
@@ -154,7 +187,7 @@ object SmsParser {
                     val lower = merchant.lowercase()
                     // Sanity check: Ensure we didn't accidentally capture bank jargon, currency, or time
                     val junkWords = setOf("payment", "transaction", "txn", "transfer", "spent", "paid", "debited", "credited", "dispute", "raise", "call")
-                    val banks = setOf("sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "idfc", "indus", "canara", "union", "rbl", "fed", "idbi", "citi", "scb", "hsbc")
+                    val banks = setOf("sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "idfc", "indus", "canara", "union", "rbl", "fed", "idbi", "citi", "scb", "hsbc", "jupiter")
 
                     val isJunk = (lower.contains("card") && !lower.contains("credit card")) ||
                                  lower.startsWith("your") ||
@@ -167,7 +200,9 @@ object SmsParser {
                                  merchant.first().isDigit() ||
                                  lower.contains("raise an issue") ||
                                  lower.contains("if not u") ||
-                                 lower.contains("other services")
+                                 lower.contains("other services") ||
+                                 lower.contains("mob bk") ||
+                                 lower.contains("net bk")
 
                     if (!isJunk) {
                         candidates.add(match.range.first to merchant)
@@ -189,8 +224,6 @@ object SmsParser {
         }
 
         return "UPI funds transfer"
-    }
-
     }
 
     private fun extractAccountLast4(text: String): String {
@@ -241,4 +274,5 @@ object SmsParser {
         val cardMatch = Regex("""(?i)(?:on your|done on|from your|at)\s+([A-Za-z0-9\s]+?)\s*(?:credit|debit)?\s*(?:card|bank)""").find(text)
         return cardMatch?.groupValues?.getOrNull(1)?.trim() ?: "Unknown Bank"
     }
+}
 

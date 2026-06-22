@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -78,11 +79,15 @@ import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
-import app.ledgerpop.screens.transactions.AddTransactionSheet
-import app.ledgerpop.screens.transactions.TransactionDetailSheet
+import app.ledgerpop.screens.transactions.AddTransactionDialog
+import app.ledgerpop.screens.transactions.TransactionDetailScreen
+import app.ledgerpop.ui.components.BulkUpdateDialog
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.viewmodel.CategoryAggregate
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import app.ledgerpop.ui.viewmodel.IncomeBenchmark
 import app.ledgerpop.ui.viewmodel.HomeViewModel
 import app.ledgerpop.utils.AmountUtils
 import dev.chrisbanes.haze.HazeState
@@ -125,6 +130,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .hazeSource(state = hazeState)
+            .statusBarsPadding()
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -137,17 +143,26 @@ fun HomeScreen(
 
             // ── Balance Card
             item {
+                val baselineIncome = if (uiState.incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH && uiState.lastMonthIncome > 0) {
+                    uiState.lastMonthIncome
+                } else {
+                    uiState.thisMonthIncome
+                }
                 val displayBalance = if (uiState.monthlyBudget > 0) {
                     uiState.monthlyBudget - uiState.thisMonthExpense
                 } else {
-                    uiState.thisMonthBalance
+                    baselineIncome - uiState.thisMonthExpense
                 }
                 BalanceRingCard(
                     totalBalance = displayBalance,
                     totalIncome = uiState.thisMonthIncome,
                     totalExpense = uiState.thisMonthExpense,
+                    lastMonthIncome = uiState.lastMonthIncome,
+                    incomeBenchmark = uiState.incomeBenchmark,
                     monthlyBudget = uiState.monthlyBudget,
-                    onUpdateBudget = { viewModel.updateBudget(it) }
+                    accentColor = accentColor,
+                    onUpdateBudget = { viewModel.updateBudget(it) },
+                    onUpdateBenchmark = { viewModel.updateIncomeBenchmark(it) }
                 )
             }
             // ── Comparison
@@ -179,15 +194,17 @@ fun HomeScreen(
             if (uiState.topCategories.isNotEmpty()) {
                 item {
                     SectionHeader(title = "Top Spending Categories", action = null)
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(uiState.topCategories) { aggregate ->
+                        uiState.topCategories.forEach { aggregate ->
                             CategoryCompactCard(
                                 aggregate = aggregate,
-                                customCategories = customCategories
+                                customCategories = customCategories,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -270,7 +287,7 @@ fun HomeScreen(
     }
 
     selectedTxn?.let { txn ->
-        TransactionDetailSheet(
+        TransactionDetailScreen(
             txn = txn,
             onDismiss = { selectedTxn = null },
             onSave = { updated ->
@@ -293,7 +310,7 @@ fun HomeScreen(
     }
 
     if (showAddSheet) {
-        AddTransactionSheet(
+        AddTransactionDialog(
             onDismiss = { showAddSheet = false },
             onAdd = { newTxn -> viewModel.addTransaction(newTxn) }
         )
@@ -405,15 +422,15 @@ private fun InsightCard(emoji: String, title: String, message: String) {
 @Composable
 private fun CategoryCompactCard(
     aggregate: CategoryAggregate,
-    customCategories: List<CustomCategoryEntity>
+    customCategories: List<CustomCategoryEntity>,
+    modifier: Modifier = Modifier
 ) {
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        modifier = Modifier
-            .width(130.dp)
+        modifier = modifier
             .height(130.dp),
         border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
     ) {
@@ -423,12 +440,14 @@ private fun CategoryCompactCard(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.TopCenter
             ) {
                 Text(
                     text = CategoryEngine.emoji(aggregate.category, customCategories),
-                    fontSize = 60.sp,
-                    modifier = Modifier.alpha(0.25f)
+                    fontSize = 50.sp,
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .alpha(0.5f)
                 )
             }
 
@@ -436,8 +455,9 @@ private fun CategoryCompactCard(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.Bottom
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.Bottom,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = aggregate.category.uppercase(),
@@ -445,12 +465,14 @@ private fun CategoryCompactCard(
                     color = MaterialTheme.colorScheme.primary,
                     letterSpacing = 0.5.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 Text(
                     text = "₹${formatAmount(aggregate.amount)}",
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             }
         }
@@ -462,13 +484,18 @@ private fun BalanceRingCard(
     totalBalance: Double,
     totalIncome: Double,
     totalExpense: Double,
+    lastMonthIncome: Double,
+    incomeBenchmark: IncomeBenchmark,
     monthlyBudget: Double,
-    onUpdateBudget: (Double) -> Unit
+    accentColor: Color,
+    onUpdateBudget: (Double) -> Unit,
+    onUpdateBenchmark: (IncomeBenchmark) -> Unit
 ) {
     var started by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { started = true }
 
-    val effectiveBudget = if (monthlyBudget > 0) monthlyBudget else totalIncome
+    val baselineIncome = if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH && lastMonthIncome > 0) lastMonthIncome else totalIncome
+    val effectiveBudget = if (monthlyBudget > 0) monthlyBudget else baselineIncome
     val spendRatio = if (effectiveBudget > 0) (totalExpense / effectiveBudget).toFloat() else 0f
 
     val animatedSweep by animateFloatAsState(
@@ -477,10 +504,10 @@ private fun BalanceRingCard(
         label = "spend_sweep"
     )
 
-    val purpleColor = Color(0xFF9C27B0)
     val redColor = Color(0xFFD63031)
     val surfaceColor = MaterialTheme.colorScheme.surface
     var showBudgetDialog by remember { mutableStateOf(false) }
+    var showBenchmarkMenu by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier
@@ -491,7 +518,7 @@ private fun BalanceRingCard(
         tonalElevation = 2.dp,
         border = BorderStroke(
             1.dp,
-            purpleColor.copy(alpha = 0.5f)
+            accentColor.copy(alpha = 0.5f)
         )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -527,9 +554,9 @@ private fun BalanceRingCard(
 
                             // 2. Spend Progress
                             if (animatedSweep <= 360f) {
-                                // Within budget: Purple arc
+                                // Within budget: accentColor arc
                                 drawArc(
-                                    color = purpleColor,
+                                    color = accentColor,
                                     startAngle = startAngle,
                                     sweepAngle = animatedSweep,
                                     useCenter = false,
@@ -538,9 +565,9 @@ private fun BalanceRingCard(
                                     style = Stroke(strokeWidth, cap = StrokeCap.Round)
                                 )
                             } else {
-                                // Over budget: Full purple ring + Red overflow
+                                // Over budget: Full accentColor ring + Red overflow
                                 drawArc(
-                                    color = purpleColor,
+                                    color = accentColor,
                                     startAngle = startAngle,
                                     sweepAngle = 360f,
                                     useCenter = false,
@@ -590,7 +617,7 @@ private fun BalanceRingCard(
                                     center = Offset(sx, sy)
                                 )
                                 drawCircle(
-                                    color = if (animatedSweep > 360f) redColor else purpleColor,
+                                    color = if (animatedSweep > 360f) redColor else accentColor,
                                     radius = 4.dp.toPx(),
                                     center = Offset(sx, sy)
                                 )
@@ -605,7 +632,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = formatAmount(kotlin.math.abs(totalBalance)),
+                            text = AmountUtils.formatAmount(totalBalance),
                             style = MaterialTheme.typography.headlineSmall,
                             color = if (totalBalance < 0) redColor else MaterialTheme.colorScheme.onSurface
                         )
@@ -621,15 +648,39 @@ private fun BalanceRingCard(
                     horizontalAlignment = Alignment.End
                 ) {
                     Column(horizontalAlignment = Alignment.End) {
+                        Box(contentAlignment = Alignment.CenterEnd) {
+                            Text(
+                                text = if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) "Income Last Month" else "Income this Month",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                modifier = Modifier.clickable { showBenchmarkMenu = true }
+                            )
+                            DropdownMenu(
+                                expanded = showBenchmarkMenu,
+                                onDismissRequest = { showBenchmarkMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Income this Month") },
+                                    onClick = {
+                                        onUpdateBenchmark(IncomeBenchmark.CURRENT_MONTH)
+                                        showBenchmarkMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Income Last Month") },
+                                    onClick = {
+                                        onUpdateBenchmark(IncomeBenchmark.PREVIOUS_MONTH)
+                                        showBenchmarkMenu = false
+                                    }
+                                )
+                            }
+                        }
                         Text(
-                            "Income this Month",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "₹${formatAmount(totalIncome)}",
+                            AmountUtils.formatWithCurrency(if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) lastMonthIncome else totalIncome),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Color(0xFF00B894)
+                            color = Color(0xFF00B894),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End
                         )
                     }
 
@@ -640,7 +691,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            "₹${formatAmount(totalExpense)}",
+                            AmountUtils.formatWithCurrency(totalExpense),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -654,7 +705,7 @@ private fun BalanceRingCard(
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (monthlyBudget > 0) "₹${formatAmount(monthlyBudget)}" else "Not Set",
+                                if (monthlyBudget > 0) AmountUtils.formatWithCurrency(monthlyBudget) else "Not Set",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -760,7 +811,7 @@ private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
 
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    "₹${formatAmount(lastMonth)}",
+                    AmountUtils.formatWithCurrency(lastMonth),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -856,7 +907,7 @@ private fun HomeTransactionRow(
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "${if (txn.amount < 0) "−" else ""}₹${AmountUtils.formatAmount(txn.amount)}",
+                text = AmountUtils.formatWithCurrency(txn.amount),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Normal,
                 color = if (isBillable) amountColor
@@ -870,7 +921,7 @@ private fun HomeTransactionRow(
                 )
             } else if (txn.originalAmount != null) {
                 Text(
-                    text = "₹${AmountUtils.formatAmount(txn.originalAmount)}",
+                    text = AmountUtils.formatWithCurrency(txn.originalAmount),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),
@@ -949,8 +1000,16 @@ fun QuickCategoryUpdateDialog(
     onSave: (SmsTransactionEntity) -> Unit,
     onUpdateEmoji: ((String, String) -> Unit)? = null
 ) {
+    val context = LocalContext.current
+    val db = remember { LedgerPopDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
+    
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
     var editingEmojiFor by remember { mutableStateOf<String?>(null) }
+    
+    var showBulkUpdateDialog by remember { mutableStateOf(false) }
+    var similarTxnsToUpdate by remember { mutableStateOf<List<SmsTransactionEntity>>(emptyList()) }
+    var pendingSavedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
 
     val categories = remember(txn.type, customCategories) {
         val standard = if (txn.type == "CREDIT") {
@@ -1009,7 +1068,24 @@ fun QuickCategoryUpdateDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(txn.copy(category = selectedCategory)) },
+                onClick = {
+                    val updated = txn.copy(category = selectedCategory)
+                    if (txn.merchant.isNotBlank() && txn.merchant.length >= 3) {
+                        scope.launch {
+                            val similar = db.smsTransactionDao().getSimilarTransactions(txn.merchant, txn.id)
+                            val filtered = similar.filter { it.category != selectedCategory }
+                            if (filtered.isNotEmpty()) {
+                                pendingSavedTxn = updated
+                                similarTxnsToUpdate = filtered
+                                showBulkUpdateDialog = true
+                            } else {
+                                onSave(updated)
+                            }
+                        }
+                    } else {
+                        onSave(updated)
+                    }
+                },
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Save Changes")
@@ -1047,6 +1123,29 @@ fun QuickCategoryUpdateDialog(
             },
             dismissButton = {
                 TextButton(onClick = { editingEmojiFor = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showBulkUpdateDialog && pendingSavedTxn != null) {
+        BulkUpdateDialog(
+            newMerchantName = txn.merchant,
+            newCategory = selectedCategory,
+            similarTransactions = similarTxnsToUpdate,
+            onDismiss = {
+                onSave(pendingSavedTxn!!)
+                showBulkUpdateDialog = false
+            },
+            onApply = { selectedIds, updateMerchant, updateCategory ->
+                scope.launch {
+                    when {
+                        updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, txn.merchant, selectedCategory)
+                        updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, txn.merchant)
+                        updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                    }
+                    onSave(pendingSavedTxn!!)
+                    showBulkUpdateDialog = false
+                }
             }
         )
     }

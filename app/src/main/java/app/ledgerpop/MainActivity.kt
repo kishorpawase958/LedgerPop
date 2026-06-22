@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,7 +38,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import androidx.compose.ui.platform.LocalContext
 import app.ledgerpop.data.local.LedgerPopDatabase
+import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.screens.analytics.AnalyticsScreen
 import app.ledgerpop.screens.home.HomeScreen
 import app.ledgerpop.screens.onboarding.OnboardingScreen
@@ -48,9 +49,11 @@ import app.ledgerpop.screens.settings.CategoryManagementScreen
 import app.ledgerpop.screens.settings.PermissionsScreen
 import app.ledgerpop.screens.settings.SettingsScreen
 import app.ledgerpop.screens.settings.SmsAuditScreen
+import app.ledgerpop.screens.transactions.AddTransactionDialog
 import app.ledgerpop.screens.transactions.TransactionsScreen
 import app.ledgerpop.ui.theme.LedgerPopTheme
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
@@ -89,15 +92,9 @@ fun isBottomNavItem(route: String?): Boolean {
 
 class MainActivity : ComponentActivity() {
     private var pendingTransactionId by mutableStateOf<Int?>(null)
+    private var showAddTransactionDialog by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val sharedPrefs = getSharedPreferences("ledgerpop_prefs", MODE_PRIVATE)
-        when (sharedPrefs.getString("app_theme", "AUTO")) {
-            "DARK" -> setTheme(R.style.Theme_App_Starting_Dark)
-            "LIGHT" -> setTheme(R.style.Theme_App_Starting_Light)
-            else -> {} // Use default Theme.App.Starting from manifest
-        }
-        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -109,9 +106,17 @@ class MainActivity : ComponentActivity() {
             val uiState by settingsViewModel.uiState.collectAsState()
 
             LedgerPopTheme(appTheme = uiState.appTheme) {
-                LedgerPopApp(settingsViewModel, pendingTransactionId) {
-                    pendingTransactionId = null
-                }
+                LedgerPopApp(
+                    settingsViewModel = settingsViewModel, 
+                    pendingTransactionId = pendingTransactionId,
+                    showAddTransactionDialog = showAddTransactionDialog,
+                    onTransactionHandled = {
+                        pendingTransactionId = null
+                    },
+                    onAddTransactionHandled = {
+                        showAddTransactionDialog = false
+                    }
+                )
             }
         }
     }
@@ -127,6 +132,9 @@ class MainActivity : ComponentActivity() {
         if (id != -1) {
             pendingTransactionId = id
         }
+        if (intent?.getStringExtra("action") == "add_transaction") {
+            showAddTransactionDialog = true
+        }
     }
 }
 
@@ -134,7 +142,9 @@ class MainActivity : ComponentActivity() {
 fun LedgerPopApp(
     settingsViewModel: SettingsViewModel,
     pendingTransactionId: Int? = null,
-    onTransactionHandled: () -> Unit = {}
+    showAddTransactionDialog: Boolean = false,
+    onTransactionHandled: () -> Unit = {},
+    onAddTransactionHandled: () -> Unit = {}
 ) {
     val uiState by settingsViewModel.uiState.collectAsState()
     val navController = rememberNavController()
@@ -142,35 +152,55 @@ fun LedgerPopApp(
     val currentRoute = navBackStackEntry?.destination?.route
     val hazeState = remember { HazeState() }
 
+    var showAddSheet by remember { mutableStateOf(false) }
+
     LaunchedEffect(pendingTransactionId) {
         if (pendingTransactionId != null) {
             navController.navigate(Screen.Transactions.createRoute(pendingTransactionId)) {
-                // Pop up to the start destination to avoid building up a large stack
-                // and to ensure 'Home' is the base.
                 popUpTo(navController.graph.findStartDestination().id) {
                     saveState = true
                 }
-                // Avoid multiple copies of the same destination when re-launching from notification
                 launchSingleTop = true
-                // Restore state if we were already on Transactions but with different arguments
                 restoreState = true
             }
             onTransactionHandled()
         }
     }
 
+    LaunchedEffect(showAddTransactionDialog) {
+        if (showAddTransactionDialog) {
+            showAddSheet = true
+            onAddTransactionHandled()
+        }
+    }
+
     val showBottomBar = isBottomNavItem(currentRoute)
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val db = remember { LedgerPopDatabase.getInstance(context) }
+
+    if (showAddSheet) {
+        AddTransactionDialog(
+            onDismiss = { showAddSheet = false },
+            onAdd = { txn ->
+                scope.launch {
+                    db.smsTransactionDao().insert(txn)
+                    showAddSheet = false
+                }
+            }
+        )
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             // Main Content Area that flows behind the floating navigation bar
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .hazeSource(state = hazeState)
-                    .padding(top = innerPadding.calculateTopPadding())
             ) {
                 NavHost(
                     navController = navController,

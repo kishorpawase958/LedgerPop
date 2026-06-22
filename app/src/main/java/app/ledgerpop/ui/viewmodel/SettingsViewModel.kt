@@ -2,6 +2,7 @@ package app.ledgerpop.ui.viewmodel
 
 import android.Manifest
 import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -21,6 +22,7 @@ import app.ledgerpop.data.sms.ImportResult
 import app.ledgerpop.data.sms.SmsImporter
 import app.ledgerpop.data.sms.SmsReader
 import app.ledgerpop.ui.state.AppTheme
+import app.ledgerpop.ui.state.AppLogo
 import app.ledgerpop.ui.state.SettingsUiState
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.data.backup.BackupScheduler
@@ -55,6 +57,11 @@ class SettingsViewModel(
         } catch (_: Exception) {
             AppTheme.AUTO
         },
+        appLogo = try {
+            AppLogo.valueOf(sharedPrefs.getString("app_logo", AppLogo.DEFAULT.name) ?: AppLogo.DEFAULT.name)
+        } catch (_: Exception) {
+            AppLogo.DEFAULT
+        },
         userName = sharedPrefs.getString("user_name", "User") ?: "User",
         isAutoBackupEnabled = sharedPrefs.getBoolean("auto_backup_enabled", false),
         backupFrequency = sharedPrefs.getString("backup_frequency", "Daily") ?: "Daily",
@@ -70,7 +77,8 @@ class SettingsViewModel(
         db.smsTransactionDao(),
         db.smsAuditDao(),
         db.accountAliasDao(),
-        db.accountDao()
+        db.accountDao(),
+        db.smartRuleDao()
     )
 
     private val backupScheduler = BackupScheduler(appContext)
@@ -118,8 +126,38 @@ class SettingsViewModel(
     }
 
     fun updateTheme(theme: AppTheme) {
-        sharedPrefs.edit { putString("app_theme", theme.name) }
+        sharedPrefs.edit(commit = true) { putString("app_theme", theme.name) }
         _uiState.update { it.copy(appTheme = theme) }
+    }
+
+    fun updateAppLogo(logo: AppLogo) {
+        sharedPrefs.edit(commit = true) { putString("app_logo", logo.name) }
+        _uiState.update { it.copy(appLogo = logo) }
+
+        val pm = appContext.packageManager
+        val packageName = appContext.packageName
+
+        val logos = mapOf(
+            AppLogo.DEFAULT to ".Launcher",
+            AppLogo.LIGHT to ".LauncherLight",
+            AppLogo.DARK to ".LauncherDark",
+            AppLogo.NAVY to ".LauncherNavy"
+        )
+
+        // Ensure we handle the components correctly regardless of context package name
+        logos.forEach { (type, activityName) ->
+            val state = if (type == logo) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+
+            pm.setComponentEnabledSetting(
+                ComponentName(packageName, "$packageName$activityName"),
+                state,
+                if (type == logo) 0 else PackageManager.DONT_KILL_APP
+            )
+        }
     }
 
     fun refreshPermissions() {
@@ -330,6 +368,25 @@ class SettingsViewModel(
         }
     }
 
+    fun unlinkAccount(alias: String) {
+        viewModelScope.launch {
+            val targetName = db.accountAliasDao().getTargetName(alias)
+            val targetAccount = targetName?.let { db.accountDao().getByName(it) }
+
+            // Create a new account with the alias name so it's not lost
+            db.accountDao().insert(
+                AccountEntity(
+                    name = alias,
+                    icon = targetAccount?.icon ?: "🏦",
+                    type = targetAccount?.type ?: "BANK"
+                )
+            )
+            
+            // Remove the alias link
+            db.accountAliasDao().deleteByAlias(alias)
+        }
+    }
+
     fun clearImportResult() {
         _uiState.update { it.copy(lastImportResult = null, lastImportMessage = "") }
     }
@@ -373,14 +430,17 @@ class SettingsViewModel(
                     db.customCategoryDao().deleteAll()
                     db.accountDao().deleteAll()
                     db.accountAliasDao().deleteAll()
+                    db.smartRuleDao().deleteAll()
                 }
 
-                // 2. Reset Preferences but keep Theme, Name and First Run Status
+                // 2. Reset Preferences but keep Theme, Logo, Name and First Run Status
                 val currentTheme = sharedPrefs.getString("app_theme", AppTheme.AUTO.name) ?: AppTheme.AUTO.name
+                val currentLogo = sharedPrefs.getString("app_logo", AppLogo.DEFAULT.name) ?: AppLogo.DEFAULT.name
                 val currentName = sharedPrefs.getString("user_name", "User") ?: "User"
                 sharedPrefs.edit {
                     clear()
                     putString("app_theme", currentTheme)
+                    putString("app_logo", currentLogo)
                     putString("user_name", currentName)
                     putBoolean("is_first_run", false)
                 }
@@ -389,6 +449,7 @@ class SettingsViewModel(
                 _uiState.update { currentState ->
                     SettingsUiState(
                         appTheme = try { AppTheme.valueOf(currentTheme) } catch (_: Exception) { AppTheme.AUTO },
+                        appLogo = try { AppLogo.valueOf(currentLogo) } catch (_: Exception) { AppLogo.DEFAULT },
                         userName = currentName,
                         isAutoBackupEnabled = false,
                         backupFrequency = "Daily",
@@ -428,6 +489,7 @@ class SettingsViewModel(
                 if (root.has("preferences")) {
                     val prefs = root.getJSONObject("preferences")
                     val theme = prefs.optString("appTheme", AppTheme.AUTO.name)
+                    val logo = prefs.optString("appLogo", AppLogo.DEFAULT.name)
                     val name = prefs.optString("userName", "User")
                     val autoBackup = prefs.optBoolean("autoBackupEnabled", false)
                     val backupFreq = prefs.optString("backupFrequency", "Daily")
@@ -436,6 +498,7 @@ class SettingsViewModel(
                     
                     sharedPrefs.edit {
                         putString("app_theme", theme)
+                        putString("app_logo", logo)
                         putString("user_name", name)
                         putBoolean("auto_backup_enabled", autoBackup)
                         putString("backup_frequency", backupFreq)
@@ -445,6 +508,7 @@ class SettingsViewModel(
                         
                     _uiState.update { it.copy(
                         appTheme = try { AppTheme.valueOf(theme) } catch (e: Exception) { AppTheme.AUTO },
+                        appLogo = try { AppLogo.valueOf(logo) } catch (e: Exception) { AppLogo.DEFAULT },
                         userName = name,
                         isAutoBackupEnabled = autoBackup,
                         backupFrequency = backupFreq,
