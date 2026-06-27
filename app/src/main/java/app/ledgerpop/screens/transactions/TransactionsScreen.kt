@@ -1,18 +1,14 @@
 package app.ledgerpop.screens.transactions
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,7 +37,6 @@ import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
-import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.state.TransactionSortOrder
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
 import app.ledgerpop.ui.components.ScrollableBarChart
@@ -49,18 +44,13 @@ import app.ledgerpop.ui.components.BulkUpdateDialog
 import app.ledgerpop.ui.components.SpeedDialFab
 import app.ledgerpop.ui.components.SpeedDialAction
 import app.ledgerpop.ui.components.FloatingFilterPopup
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
-import androidx.compose.ui.unit.IntOffset
 import androidx.activity.compose.BackHandler
 import java.text.SimpleDateFormat
 import java.util.*
@@ -396,25 +386,17 @@ fun TransactionsScreen(
                     )
                 }
 
+                val isAmountSort = uiState.selectedSortOrder == TransactionSortOrder.AMOUNT_DESC || 
+                                 uiState.selectedSortOrder == TransactionSortOrder.AMOUNT_ASC
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    groupedTransactions.forEach { (month, transactions) ->
-                        item(key = month) {
-                            Text(
-                                text = month,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .padding(horizontal = 20.dp)
-                                    .padding(top = 16.dp, bottom = 8.dp)
-                            )
-                        }
-
+                    if (isAmountSort) {
                         items(
-                            items = transactions,
+                            items = filtered,
                             key = { it.id }
                         ) { txn ->
                             TransactionRow(
@@ -427,6 +409,35 @@ fun TransactionsScreen(
                                 onLongClick = onTransactionLongClick,
                                 onCategoryClick = onQuickCategoryClick
                             )
+                        }
+                    } else {
+                        groupedTransactions.forEach { (month, transactions) ->
+                            item(key = month) {
+                                Text(
+                                    text = month,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(horizontal = 20.dp)
+                                        .padding(top = 16.dp, bottom = 8.dp)
+                                )
+                            }
+
+                            items(
+                                items = transactions,
+                                key = { it.id }
+                            ) { txn ->
+                                TransactionRow(
+                                    txn = txn,
+                                    isSelected = selectedIds.contains(txn.id),
+                                    isSelectionMode = selectedIds.isNotEmpty(),
+                                    customCategories = uiState.customCategories,
+                                    allTransactions = uiState.allTransactions,
+                                    onClick = onTransactionClick,
+                                    onLongClick = onTransactionLongClick,
+                                    onCategoryClick = onQuickCategoryClick
+                                )
+                            }
                         }
                     }
                 }
