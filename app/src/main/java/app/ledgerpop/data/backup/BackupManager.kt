@@ -57,7 +57,7 @@ class BackupManager(private val context: Context) {
         val aliases = db.accountAliasDao().getAllAliases()
 
         val root = JSONObject()
-        root.put("backupVersion", 3)
+        root.put("backupVersion", 4)
         root.put("timestamp", System.currentTimeMillis())
         root.put("appName", "LedgerPop")
 
@@ -114,6 +114,7 @@ class BackupManager(private val context: Context) {
             obj.put("hashKey", audit.hashKey)
             obj.put("reportType", audit.reportType)
             obj.put("reportNote", audit.reportNote)
+            obj.put("reportTimestamp", audit.reportTimestamp)
             auditsArray.put(obj)
         }
         root.put("auditLogs", auditsArray)

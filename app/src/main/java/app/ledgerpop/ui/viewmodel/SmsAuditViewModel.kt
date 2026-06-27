@@ -10,10 +10,13 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.parser.SmsParser
+import app.ledgerpop.data.sms.SmsFilter
 import app.ledgerpop.ui.state.AuditFilter
 import app.ledgerpop.ui.state.SmsAuditUiState
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -31,6 +34,9 @@ class SmsAuditViewModel(
     private val _uiState = MutableStateFlow(SmsAuditUiState(isLoading = true))
     val uiState: StateFlow<SmsAuditUiState> = _uiState.asStateFlow()
 
+    private val _events = MutableSharedFlow<String>()
+    val events = _events.asSharedFlow()
+
     init {
         viewModelScope.launch {
             auditDao.getAll().collect { entries ->
@@ -40,6 +46,7 @@ class SmsAuditViewModel(
                 val reported = entries.count { it.reportType.isNotBlank() }
 
                 _uiState.update { state ->
+                    val isReparsing = state.loadingProgress != null
                     val updated = state.copy(
                         allEntries = entries,
                         totalSeen = entries.size,
@@ -47,7 +54,10 @@ class SmsAuditViewModel(
                         totalSkipped = skipped,
                         totalParseFailed = parseFailed,
                         totalReported = reported,
-                        isLoading = false
+                        isLoading = if (isReparsing) state.isLoading else false,
+                        loadingProgress = if (isReparsing) state.loadingProgress else null,
+                        processingCount = if (isReparsing) state.processingCount else 0,
+                        processingCurrent = if (isReparsing) state.processingCurrent else 0
                     )
                     updated.copy(
                         filteredEntries = applyFilter(
@@ -92,6 +102,7 @@ class SmsAuditViewModel(
             AuditFilter.SKIPPED     -> entries.filter { it.status == "SKIPPED" }
             AuditFilter.PARSE_FAILED -> entries.filter { it.status == "PARSE_FAILED" }
             AuditFilter.REPORTED    -> entries.filter { it.reportType.isNotBlank() }
+                .sortedByDescending { it.reportTimestamp }
         }
         return if (query.isBlank()) byFilter
         else byFilter.filter {
@@ -105,7 +116,64 @@ class SmsAuditViewModel(
 
     fun toggleExpand(id: Int) {
         _uiState.update { state ->
-            state.copy(expandedEntryId = if (state.expandedEntryId == id) null else id)
+            val newExpanded = if (state.expandedAuditIds.contains(id)) {
+                state.expandedAuditIds - id
+            } else {
+                state.expandedAuditIds + id
+            }
+            state.copy(expandedAuditIds = newExpanded)
+        }
+    }
+
+    // ── Selection Mode ────────────────────────────────────────────────────────
+
+    fun toggleSelection(id: Int) {
+        _uiState.update { state ->
+            val newSelected = if (state.selectedAuditIds.contains(id)) {
+                state.selectedAuditIds - id
+            } else {
+                state.selectedAuditIds + id
+            }
+            state.copy(
+                selectedAuditIds = newSelected,
+                isSelectionMode = newSelected.isNotEmpty()
+            )
+        }
+    }
+
+    fun clearSelection() {
+        _uiState.update { it.copy(selectedAuditIds = emptySet(), isSelectionMode = false) }
+    }
+
+    fun selectAll() {
+        _uiState.update { state ->
+            val allIds = state.filteredEntries.map { it.id }.toSet()
+            val allSelected = state.selectedAuditIds.containsAll(allIds) && allIds.isNotEmpty()
+            val newSelected = if (allSelected) emptySet() else allIds
+            state.copy(selectedAuditIds = newSelected, isSelectionMode = newSelected.isNotEmpty())
+        }
+    }
+
+    fun reparseSelected() {
+        val selectedIds = _uiState.value.selectedAuditIds
+        if (selectedIds.isEmpty()) return
+
+        _uiState.update { it.copy(isLoading = true, loadingProgress = 0f, processingCount = 0, processingCurrent = 0, isSelectionMode = false, selectedAuditIds = emptySet()) }
+        viewModelScope.launch {
+            val allAudit = auditDao.getAllSync()
+            val toReparse = allAudit.filter { selectedIds.contains(it.id) }
+            val total = toReparse.size
+            var changedCount = 0
+            toReparse.forEachIndexed { index, entry ->
+                if (reparseEntry(entry)) changedCount++
+                _uiState.update { it.copy(
+                    loadingProgress = (index + 1).toFloat() / total,
+                    processingCount = total,
+                    processingCurrent = index + 1
+                ) }
+            }
+            _uiState.update { it.copy(isLoading = false, loadingProgress = null, processingCount = 0, processingCurrent = 0) }
+            _events.emit("Processed $total messages. $changedCount updated.")
         }
     }
 
@@ -128,6 +196,49 @@ class SmsAuditViewModel(
                 reportingEntry = null,
                 reportNote = ""
             )
+        }
+    }
+
+    fun showBulkReportDialog() {
+        _uiState.update { it.copy(showBulkReportDialog = true, reportNote = "") }
+    }
+
+    fun hideBulkReportDialog() {
+        _uiState.update { it.copy(showBulkReportDialog = false, reportNote = "") }
+    }
+
+    fun applyBulkReport(reportType: String) {
+        val state = _uiState.value
+        val selectedIds = state.selectedAuditIds
+        if (selectedIds.isEmpty()) return
+
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                loadingProgress = 0f,
+                processingCount = 0,
+                processingCurrent = 0,
+                isSelectionMode = false,
+                selectedAuditIds = emptySet(),
+                showBulkReportDialog = false
+            )
+        }
+
+        viewModelScope.launch {
+            val allAudit = auditDao.getAllSync()
+            val toCorrect = allAudit.filter { selectedIds.contains(it.id) }
+            val total = toCorrect.size
+            val note = state.reportNote.trim().ifBlank { "Bulk report" }
+            toCorrect.forEachIndexed { index, entry ->
+                processCorrection(entry, reportType, note)
+                _uiState.update { it.copy(
+                    loadingProgress = (index + 1).toFloat() / total,
+                    processingCount = total,
+                    processingCurrent = index + 1
+                ) }
+            }
+            _uiState.update { it.copy(isLoading = false, loadingProgress = null, processingCount = 0, processingCurrent = 0) }
+            _events.emit("Applied report to $total messages.")
         }
     }
 
@@ -196,11 +307,20 @@ class SmsAuditViewModel(
         val selectedIds = state.selectedSimilarIds
         val note = state.reportNote.trim()
 
+        _uiState.update { it.copy(isLoading = true, loadingProgress = 0f, processingCount = 0, processingCurrent = 0) }
         viewModelScope.launch {
             val toCorrect = state.similarEntries.filter { selectedIds.contains(it.id) }
-            toCorrect.forEach { entry ->
+            val total = toCorrect.size
+            toCorrect.forEachIndexed { index, entry ->
                 processCorrection(entry, reportType, note)
+                _uiState.update { it.copy(
+                    loadingProgress = (index + 1).toFloat() / total,
+                    processingCount = total,
+                    processingCurrent = index + 1
+                ) }
             }
+            _uiState.update { it.copy(isLoading = false, loadingProgress = null, processingCount = 0, processingCurrent = 0) }
+            _events.emit("Retroactively corrected $total messages.")
             hideSimilarEntriesDialog()
         }
     }
@@ -223,7 +343,8 @@ class SmsAuditViewModel(
         auditDao.updateReport(
             id = entry.id,
             reportType = reportType,
-            note = note
+            note = note,
+            timestamp = System.currentTimeMillis()
         )
 
         // Bridge logic: Update the actual transactions table based on the report type
@@ -317,16 +438,27 @@ class SmsAuditViewModel(
         val triggerEntry = state.reportingEntry ?: return
         val selectedIds = state.selectedSimilarIds
 
+        _uiState.update { it.copy(isLoading = true, loadingProgress = 0f, processingCount = 0, processingCurrent = 0) }
         viewModelScope.launch {
             // Clear the trigger entry
             processClearReport(triggerEntry)
 
             // Clear selected similar entries
             val toClear = state.similarEntries.filter { selectedIds.contains(it.id) }
-            toClear.forEach { entry ->
+            val total = toClear.size
+            toClear.forEachIndexed { index, entry ->
                 processClearReport(entry)
+                if (total > 0) {
+                    _uiState.update { it.copy(
+                        loadingProgress = (index + 1).toFloat() / total,
+                        processingCount = total,
+                        processingCurrent = index + 1
+                    ) }
+                }
             }
 
+            _uiState.update { it.copy(isLoading = false, loadingProgress = null, processingCount = 0, processingCurrent = 0) }
+            _events.emit("Cleared reports for ${total + 1} messages.")
             hideClearSimilarDialog()
         }
     }
@@ -380,7 +512,7 @@ class SmsAuditViewModel(
         val structure = SmsParser.getStructure(entry.body)
         smartRuleDao.deleteRule(entry.sender, structure)
 
-        auditDao.updateReport(id = entry.id, reportType = "", note = "")
+        auditDao.updateReport(id = entry.id, reportType = "", note = "", timestamp = 0L)
     }
 
     private suspend fun resolveAccountName(name: String): String {
@@ -413,6 +545,166 @@ class SmsAuditViewModel(
         return CategoryEngine.categorize(merchant, body, sender)
     }
 
+    // ── Reparse All ──────────────────────────────────────────────────────────
+
+    fun reparseAll() {
+        _uiState.update { it.copy(isLoading = true, loadingProgress = 0f, processingCount = 0, processingCurrent = 0) }
+        viewModelScope.launch {
+            val allAudit = auditDao.getAllSync()
+            val total = allAudit.size
+            var changedCount = 0
+            allAudit.forEachIndexed { index, entry ->
+                if (reparseEntry(entry)) changedCount++
+                _uiState.update { it.copy(
+                    loadingProgress = (index + 1).toFloat() / total,
+                    processingCount = total,
+                    processingCurrent = index + 1
+                ) }
+            }
+            _uiState.update { it.copy(isLoading = false, loadingProgress = null, processingCount = 0, processingCurrent = 0) }
+            _events.emit("Reparsed $total messages. $changedCount updated/moved.")
+        }
+    }
+
+    private suspend fun reparseEntry(entry: SmsAuditEntity): Boolean {
+        val oldStatus = entry.status
+
+        val structure = SmsParser.getStructure(entry.body)
+        val rules = smartRuleDao.getBySender(entry.sender)
+        val smartAction = rules.find { it.bodyStructure == structure }?.ruleType
+
+        val shouldProcess = when (smartAction) {
+            "ALWAYS_IMPORT" -> true
+            "ALWAYS_SKIP" -> false
+            else -> SmsFilter.shouldProcess(entry.sender, entry.body)
+        }
+        val reason = when (smartAction) {
+            "ALWAYS_IMPORT" -> "Smart Rule: ALWAYS_IMPORT"
+            "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
+            else -> SmsFilter.skipReason(entry.sender, entry.body)
+        }
+
+        if (!shouldProcess) {
+            val newHashKey = SmsParser.buildHashKey(entry.sender, entry.timestamp, 0.0, "SKIPPED")
+            
+            // If it was previously IMPORTED, delete the transaction
+            if (entry.status == "IMPORTED") {
+                transactionDao.getTransactionByHash(entry.hashKey)?.let {
+                    transactionDao.delete(it)
+                }
+            }
+
+            // Flag as FALSE_POSITIVE if it was IMPORTED but now SKIPPED
+            val newReportType = if (entry.status == "IMPORTED") "FALSE_POSITIVE" else entry.reportType
+            val newNote = if (entry.status == "IMPORTED") "Reparsed: Now correctly skipped" else entry.reportNote
+            val newReportTimestamp = if (entry.status == "IMPORTED") System.currentTimeMillis() else entry.reportTimestamp
+
+            auditDao.update(
+                entry.copy(
+                    status = "SKIPPED",
+                    skipReason = reason,
+                    parsedAmount = 0.0,
+                    parsedType = "",
+                    hashKey = newHashKey,
+                    reportType = newReportType,
+                    reportNote = newNote,
+                    reportTimestamp = newReportTimestamp
+                )
+            )
+            return oldStatus != "SKIPPED"
+        }
+
+        val parsed = SmsParser.parse(entry.sender, entry.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
+        if (parsed == null) {
+            val newHashKey = SmsParser.buildHashKey(entry.sender, entry.timestamp, 0.0, "PARSE_FAILED")
+            if (entry.status == "IMPORTED") {
+                transactionDao.getTransactionByHash(entry.hashKey)?.let {
+                    transactionDao.delete(it)
+                }
+            }
+            auditDao.update(
+                entry.copy(
+                    status = "PARSE_FAILED",
+                    skipReason = "Parser returned null",
+                    parsedAmount = 0.0,
+                    parsedType = "",
+                    hashKey = newHashKey,
+                    reportType = if (entry.status == "IMPORTED") "FALSE_POSITIVE" else entry.reportType,
+                    reportNote = if (entry.status == "IMPORTED") "Reparsed: Now failed to parse" else entry.reportNote,
+                    reportTimestamp = if (entry.status == "IMPORTED") System.currentTimeMillis() else entry.reportTimestamp
+                )
+            )
+            return oldStatus != "PARSE_FAILED"
+        }
+
+        val newHashKey = SmsParser.buildHashKey(entry.sender, entry.timestamp, parsed.amount, parsed.type, parsed.refNo)
+
+        // Update or Insert transaction
+        val merchant = resolveMerchantName(parsed.merchant)
+        val category = resolveCategory(merchant, entry.body, entry.sender)
+        val account = resolveAccountName(parsed.accountName)
+
+        val existingTxn = transactionDao.getTransactionByHash(entry.hashKey)
+        var changed = false
+        if (existingTxn != null) {
+            val updatedTxn = existingTxn.copy(
+                amount = parsed.amount,
+                type = parsed.type,
+                merchant = merchant,
+                category = category,
+                bank = parsed.bank,
+                accountHint = account,
+                isBillable = parsed.includeInAnalytics,
+                hashKey = newHashKey
+            )
+            if (updatedTxn != existingTxn) {
+                transactionDao.update(updatedTxn)
+                changed = true
+            }
+        } else {
+            // Check if it exists with the new hashKey to avoid duplicates
+            if (transactionDao.exists(newHashKey) == 0) {
+                transactionDao.insert(
+                    SmsTransactionEntity(
+                        sender = entry.sender,
+                        body = entry.body,
+                        amount = parsed.amount,
+                        type = parsed.type,
+                        merchant = merchant,
+                        category = category,
+                        bank = parsed.bank,
+                        accountHint = account,
+                        transactionTime = entry.timestamp,
+                        hashKey = newHashKey,
+                        isBillable = parsed.includeInAnalytics
+                    )
+                )
+                changed = true
+            }
+        }
+
+        // Flag as FALSE_NEGATIVE if it was SKIPPED but now IMPORTED
+        val newReportType = if (entry.status == "SKIPPED" || entry.status == "PARSE_FAILED") "FALSE_NEGATIVE" else entry.reportType
+        val newNote = if (entry.status == "SKIPPED" || entry.status == "PARSE_FAILED") "Reparsed: Now correctly imported" else entry.reportNote
+        val newReportTimestamp = if (entry.status == "SKIPPED" || entry.status == "PARSE_FAILED") System.currentTimeMillis() else entry.reportTimestamp
+
+        val updatedEntry = entry.copy(
+            status = "IMPORTED",
+            skipReason = "",
+            parsedAmount = parsed.amount,
+            parsedType = parsed.type,
+            hashKey = newHashKey,
+            reportType = newReportType,
+            reportNote = newNote,
+            reportTimestamp = newReportTimestamp
+        )
+        if (updatedEntry != entry) {
+            auditDao.update(updatedEntry)
+            changed = true
+        }
+        
+        return changed || oldStatus != "IMPORTED"
+    }
 
     companion object {
         fun factory(database: LedgerPopDatabase): ViewModelProvider.Factory =

@@ -11,7 +11,10 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "sms_audit",
-    indices = [Index(value = ["hashKey"], unique = true)]
+    indices = [
+        Index(value = ["hashKey"]),
+        Index(value = ["sender", "timestamp"])
+    ]
 )
 data class SmsAuditEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
@@ -24,5 +27,6 @@ data class SmsAuditEntity(
     val parsedType: String = "",    // DEBIT | CREDIT | "" if not imported
     val reportType: String = "",    // "" | FALSE_POSITIVE | FALSE_NEGATIVE
     val reportNote: String = "",    // User's optional note when reporting
+    val reportTimestamp: Long = 0, // When it was reported/corrected
     val hashKey: String             // Same hash as SmsTransactionEntity for linking
 )

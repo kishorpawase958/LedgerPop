@@ -23,13 +23,15 @@ import androidx.compose.ui.platform.LocalLocale
 fun BulkUpdateDialog(
     newMerchantName: String,
     newCategory: String,
+    newIsBillable: Boolean,
     similarTransactions: List<SmsTransactionEntity>,
     onDismiss: () -> Unit,
-    onApply: (List<Int>, Boolean, Boolean) -> Unit
+    onApply: (List<Int>, Boolean, Boolean, Boolean) -> Unit
 ) {
     var selectedIds by remember { mutableStateOf(similarTransactions.map { it.id }.toSet()) }
     var updateMerchant by remember { mutableStateOf(true) }
     var updateCategory by remember { mutableStateOf(true) }
+    var updateBillable by remember { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -85,6 +87,23 @@ fun BulkUpdateDialog(
                     )
                 }
 
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = updateBillable,
+                        onCheckedChange = { updateBillable = it }
+                    )
+                    Text(
+                        text = "Include in Analytics: ${if (newIsBillable) "Yes" else "No"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
                 Text(
@@ -96,7 +115,7 @@ fun BulkUpdateDialog(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 350.dp),
+                        .heightIn(max = 280.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(similarTransactions) { txn ->
@@ -154,8 +173,8 @@ fun BulkUpdateDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onApply(selectedIds.toList(), updateMerchant, updateCategory) },
-                enabled = selectedIds.isNotEmpty() && (updateMerchant || updateCategory)
+                onClick = { onApply(selectedIds.toList(), updateMerchant, updateCategory, updateBillable) },
+                enabled = selectedIds.isNotEmpty() && (updateMerchant || updateCategory || updateBillable)
             ) {
                 Text("Update ${selectedIds.size} items")
             }

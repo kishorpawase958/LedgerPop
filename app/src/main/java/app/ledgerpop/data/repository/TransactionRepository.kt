@@ -37,6 +37,20 @@ class TransactionRepository(
     suspend fun updateCategoryForIds(ids: List<Int>, category: String) = 
         dao.updateCategoryForIds(ids, category)
 
+    suspend fun updateBillableForIds(ids: List<Int>, isBillable: Boolean) = 
+        dao.updateBillableForIds(ids, isBillable)
+
+    suspend fun updateBulk(ids: List<Int>, merchant: String, category: String, isBillable: Boolean) = 
+        dao.updateBulk(ids, merchant, category, isBillable)
+
+    suspend fun deleteByIds(ids: List<Int>) {
+        // Need to unlink credits before deleting debits
+        ids.forEach { id ->
+            dao.unlinkAllCreditsFromDebit(id)
+        }
+        dao.deleteByIds(ids)
+    }
+
     fun getAllCustomCategories() = categoryDao.getAllCategories()
     
     fun getAllAccounts() = accountDao.getAllAccounts()

@@ -1,8 +1,11 @@
 package app.ledgerpop.screens.settings
 
+import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -45,12 +48,30 @@ fun SmsAuditScreen(onBack: () -> Unit) {
     )
     val uiState by viewModel.uiState.collectAsState()
 
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Bulk report dialog
+    if (uiState.showBulkReportDialog) {
+        BulkReportDialog(
+            selectedCount = uiState.selectedAuditIds.size,
+            note = uiState.reportNote,
+            onNoteChange = { newNote -> viewModel.onReportNoteChange(newNote) },
+            onSubmitFalsePositive = { viewModel.applyBulkReport("FALSE_POSITIVE") },
+            onSubmitFalseNegative = { viewModel.applyBulkReport("FALSE_NEGATIVE") },
+            onDismiss = { viewModel.hideBulkReportDialog() }
+        )
+    }
+
     // Report dialog
     if (uiState.showReportDialog && uiState.reportingEntry != null) {
         ReportDialog(
             entry = uiState.reportingEntry!!,
             note = uiState.reportNote,
-            onNoteChange = { viewModel.onReportNoteChange(it) },
+            onNoteChange = { newNote -> viewModel.onReportNoteChange(newNote) },
             onSubmitFalsePositive = { viewModel.submitReport("FALSE_POSITIVE") },
             onSubmitFalseNegative = { viewModel.submitReport("FALSE_NEGATIVE") },
             onDismiss = { viewModel.hideReportDialog() }
@@ -86,6 +107,44 @@ fun SmsAuditScreen(onBack: () -> Unit) {
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
     ) {
+        // ── Top Progress Bar ─────────────────────────────────────────────────
+        AnimatedVisibility(
+            visible = uiState.loadingProgress != null,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f))) {
+                LinearProgressIndicator(
+                    progress = { uiState.loadingProgress ?: 0f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    trackColor = Color.Transparent,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Processing ${uiState.processingCurrent} of ${uiState.processingCount}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${((uiState.loadingProgress ?: 0f) * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
         // ── Top bar ───────────────────────────────────────────────────────────
         Row(
             modifier = Modifier
@@ -93,21 +152,77 @@ fun SmsAuditScreen(onBack: () -> Unit) {
                 .padding(start = 4.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.Rounded.ArrowBackIosNew,
-                    contentDescription = "Back",
-                    modifier = Modifier.size(20.dp)
+            if (uiState.isSelectionMode) {
+                IconButton(onClick = { viewModel.clearSelection() }) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Clear selection")
+                }
+                Text(
+                    "${uiState.selectedAuditIds.size} selected",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = { viewModel.selectAll() }) {
+                    Icon(
+                        Icons.Rounded.SelectAll,
+                        contentDescription = "Select all",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(onClick = { viewModel.reparseSelected() }) {
+                    Icon(
+                        Icons.Rounded.Refresh,
+                        contentDescription = "Reload selected",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(onClick = { viewModel.showBulkReportDialog() }) {
+                    Icon(
+                        Icons.Rounded.Flag,
+                        contentDescription = "Report selected",
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Rounded.ArrowBackIosNew,
+                        contentDescription = "Back",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Text(
+                    "SMS Audit Log",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { viewModel.reparseAll() }) {
+                    Icon(
+                        Icons.Rounded.Refresh,
+                        contentDescription = "Refresh and re-parse all",
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                IconButton(onClick = { 
+                    // Toogle selection mode manually if needed, or just let checkboxes work
+                    // But we'll use this as an entry point
+                    if (uiState.filteredEntries.isNotEmpty()) {
+                        viewModel.toggleSelection(uiState.filteredEntries.first().id)
+                    }
+                }) {
+                    Icon(
+                        Icons.Rounded.LibraryAddCheck,
+                        contentDescription = "Select messages",
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
-            Text(
-                "SMS Audit Log",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
         }
 
-        if (uiState.isLoading) {
+        if (uiState.isLoading && uiState.loadingProgress == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
@@ -264,8 +379,11 @@ fun SmsAuditScreen(onBack: () -> Unit) {
                 ) { entry ->
                     AuditEntryCard(
                         entry = entry,
-                        isExpanded = uiState.expandedEntryId == entry.id,
+                        isExpanded = uiState.expandedAuditIds.contains(entry.id),
+                        isSelected = uiState.selectedAuditIds.contains(entry.id),
+                        isSelectionMode = uiState.isSelectionMode,
                         onToggleExpand = { viewModel.toggleExpand(entry.id) },
+                        onToggleSelect = { viewModel.toggleSelection(entry.id) },
                         onReport = { viewModel.showReportDialog(entry) },
                         onClearReport = { viewModel.clearReport(entry.id) }
                     )
@@ -277,11 +395,15 @@ fun SmsAuditScreen(onBack: () -> Unit) {
 
 // ── Audit Entry Card ──────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AuditEntryCard(
     entry: SmsAuditEntity,
     isExpanded: Boolean,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onToggleExpand: () -> Unit,
+    onToggleSelect: () -> Unit,
     onReport: () -> Unit,
     onClearReport: () -> Unit
 ) {
@@ -304,218 +426,250 @@ private fun AuditEntryCard(
     val isReported = entry.reportType.isNotBlank()
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {
+                    if (isSelectionMode) onToggleSelect() else onToggleExpand()
+                },
+                onLongClick = {
+                    if (!isSelectionMode) onToggleSelect()
+                }
+            ),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isReported)
-                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-            else
-                MaterialTheme.colorScheme.surface
-        )
+            containerColor = when {
+                isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                isReported -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(
+            2.dp,
+            MaterialTheme.colorScheme.primary
+        ) else null
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-
-            // ── Header row ────────────────────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Status icon
-                Icon(
-                    statusIcon,
-                    contentDescription = entry.status,
-                    tint = statusColor,
-                    modifier = Modifier.size(18.dp)
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            // ── Checkbox for selection ────────────────────────────────────────
+            if (isSelectionMode || isSelected) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelect() },
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(24.dp)
                 )
-                Spacer(Modifier.width(8.dp))
+            }
 
-                // Sender
-                Text(
-                    text = entry.sender,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+            Column(modifier = Modifier.weight(1f)) {
 
-                // Reported badge
-                if (isReported) {
-                    Spacer(Modifier.width(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.tertiaryContainer
-                    ) {
+                // ── Header row ────────────────────────────────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Status icon
+                    Icon(
+                        statusIcon,
+                        contentDescription = entry.status,
+                        tint = statusColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+
+                    // Sender
+                    Text(
+                        text = entry.sender,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    // Reported badge
+                    if (isReported) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Text(
+                                text = if (entry.reportType == "FALSE_POSITIVE")
+                                    "⚠ wrongly imported"
+                                else
+                                    "⚠ wrongly skipped",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                // ── Date + status label ───────────────────────────────────────────
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = sdf.format(Date(entry.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "·",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = entry.status.replace("_", " "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor
+                    )
+                    // Show parsed amount if imported
+                    if (entry.status == "IMPORTED" && entry.parsedAmount > 0) {
                         Text(
-                            text = if (entry.reportType == "FALSE_POSITIVE")
-                                "⚠ wrongly imported"
-                            else
-                                "⚠ wrongly skipped",
+                            "·",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${entry.parsedType} ₹${AmountUtils.formatAmount(entry.parsedAmount)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (entry.parsedType == "CREDIT")
+                                Color(0xFF00B894)
+                            else
+                                MaterialTheme.colorScheme.error
                         )
                     }
                 }
-            }
 
-            Spacer(Modifier.height(4.dp))
-
-            // ── Date + status label ───────────────────────────────────────────
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = sdf.format(Date(entry.timestamp)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text("·",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = entry.status.replace("_", " "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = statusColor
-                )
-                // Show parsed amount if imported
-                if (entry.status == "IMPORTED" && entry.parsedAmount > 0) {
-                    Text("·",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${entry.parsedType} ₹${AmountUtils.formatAmount(entry.parsedAmount)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (entry.parsedType == "CREDIT")
-                            Color(0xFF00B894)
-                        else
-                            MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            // ── Skip reason ───────────────────────────────────────────────────
-            if (entry.skipReason.isNotBlank() && entry.status != "IMPORTED") {
-                Spacer(Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Rounded.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = entry.skipReason,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // ── SMS body (expandable) ─────────────────────────────────────────
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggleExpand() },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isExpanded) "Hide message" else "Show message",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Icon(
-                    imageVector = if (isExpanded)
-                        Icons.Rounded.ExpandLess
-                    else
-                        Icons.Rounded.ExpandMore,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = entry.body,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // ── Skip reason ───────────────────────────────────────────────────
+                if (entry.skipReason.isNotBlank() && entry.status != "IMPORTED") {
+                    Spacer(Modifier.height(6.dp))
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
-                            .padding(10.dp)
-                    )
-
-                    // Report / clear report buttons
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (isReported) {
-                            // Show report note if any
-                            if (entry.reportNote.isNotBlank()) {
-                                Text(
-                                    text = "Note: ${entry.reportNote}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f)
+                        Icon(
+                            Icons.Rounded.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = entry.skipReason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // ── SMS body (expandable) ─────────────────────────────────────────
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleExpand() },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isExpanded) "Hide message" else "Show message",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Icon(
+                        imageVector = if (isExpanded)
+                            Icons.Rounded.ExpandLess
+                        else
+                            Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = isExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = entry.body,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 )
-                            }
-                            TextButton(
-                                onClick = onClearReport,
-                                colors = ButtonDefaults.textButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Rounded.Undo,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    "Clear report",
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
-                        } else {
-                            TextButton(onClick = onReport) {
-                                Icon(
-                                    Icons.Rounded.Flag,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    "Report",
-                                    style = MaterialTheme.typography.labelMedium
-                                )
+                                .padding(10.dp)
+                        )
+
+                        // Report / clear report buttons
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isReported) {
+                                // Show report note if any
+                                if (entry.reportNote.isNotBlank()) {
+                                    Text(
+                                        text = "Note: ${entry.reportNote}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                TextButton(
+                                    onClick = onClearReport,
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Rounded.Undo,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        "Clear report",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            } else {
+                                TextButton(onClick = onReport) {
+                                    Icon(
+                                        Icons.Rounded.Flag,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        "Report",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
                             }
                         }
                     }
@@ -741,6 +895,127 @@ private fun ClearSimilarDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Just this one")
+            }
+        }
+    )
+}
+
+// ── Bulk Report Dialog ────────────────────────────────────────────────────────
+
+@Composable
+private fun BulkReportDialog(
+    selectedCount: Int,
+    note: String,
+    onNoteChange: (String) -> Unit,
+    onSubmitFalsePositive: () -> Unit,
+    onSubmitFalseNegative: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                "Report $selectedCount messages",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Apply this correction to all $selectedCount selected messages.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                HorizontalDivider()
+
+                Text(
+                    "What's wrong with these?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                // False positive button
+                OutlinedButton(
+                    onClick = onSubmitFalsePositive,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Icon(
+                        Icons.Rounded.ThumbDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            "Wrongly imported",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Text(
+                            "These are not real transactions",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+
+                // False negative button
+                OutlinedButton(
+                    onClick = onSubmitFalseNegative,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFF00B894)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        Color(0xFF00B894).copy(alpha = 0.5f)
+                    )
+                ) {
+                    Icon(
+                        Icons.Rounded.ThumbUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            "Wrongly skipped",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                        Text(
+                            "These ARE real transactions",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+
+                // Optional note
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = onNoteChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Note (optional)") },
+                    placeholder = { Text("e.g. System failed to recognize structure") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences
+                    )
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )

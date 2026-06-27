@@ -28,25 +28,36 @@ object SmsParser {
     private val creditKeywords = listOf("credit", "credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
     
     private val spamKeywords = listOf(
-        "kindly ignore if paid", "otp is", "otp for", "is your otp", "one time password for", 
+        "dear client","pay with points","to be","eligibility","upto","instant","instant credit","instant cash","instant payment","instant loan","get","sale","flat","bonus","schedule","voucher","activating","activate","expire","offer","coupon","save","shortlisted","kindly ignore if paid","code:","otp","otp:","otp is", "otp for", "is your otp", "one time password for",
         "reminder", "cooling period", "generated", "request", "require", "allot", "disburse", "disbursal",
         "declined", "failed", "unsuccessful", "insufficient", "will be", "due",
         // Mutual Funds / SIP / Demat / Corporate action blocks
-        "sip transaction", "sip purchase", "units", "nav of", "folio", "processed at nav", "cdsl: debit", "nsdl: debit",
+        "sip transaction", "sip purchase", "units", "nav of", "folio", "processed at nav", "cdsl: ", "nsdl: ",
         // Marketing / Loan offers / Rewards blocks
         "confirm your tenure", "tenure", "redeem your", "reward points", "edge reward", "pre-approved", "eligible for loan"
     )
 
-    /**
-     * Generalizes an SMS body to create a "structure" for smart learning.
-     * Replaces numbers with # to ignore specific amounts, dates, or account numbers.
-     */
     fun getStructure(body: String): String {
         return body.replace(Regex("""\d+"""), "#")
             .replace("\n", " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
             .lowercase(Locale.getDefault())
+    }
+
+    fun buildHashKey(
+        sender: String,
+        timestamp: Long,
+        amount: Double,
+        type: String,
+        refNo: String = ""
+    ): String {
+        if (refNo.isNotBlank()) {
+            return "${sender}_${refNo}_${amount}_${type}"
+        }
+        // Use a 5-second window to handle slight discrepancies between receiver and content provider
+        val rounded = (timestamp / 5000) * 5000
+        return "${sender}_${rounded}_${amount}_${type}"
     }
 
     fun parse(sender: String, body: String, ignoreSpamCheck: Boolean = false): ParsedSmsTransaction? {
@@ -192,13 +203,15 @@ object SmsParser {
             pattern.findAll(text).forEach { match ->
                 val merchant = match.groupValues.getOrNull(1)?.trim()
                 if (!merchant.isNullOrBlank() && merchant.length > 2) {
-                    if (match.value.startsWith("for", ignoreCase = true) &&
-                        text.take(match.range.first).lowercase().trimEnd().endsWith("thanks")) {
-                        return@forEach
+                    if (match.value.startsWith("for", ignoreCase = true)) {
+                        val before = text.take(match.range.first).lowercase().trimEnd().trimEnd(',', '.', '!', ';').trimEnd()
+                        if (before.endsWith("thanks") || before.endsWith("thank you") || before.endsWith("thnx")) {
+                            return@forEach
+                        }
                     }
 
                     val lower = merchant.lowercase()
-                    val junkWords = setOf("payment", "transaction", "txn", "transfer", "spent", "paid", "debited", "credited", "dispute", "raise", "call")
+                    val junkWords = setOf("payment", "transaction", "txn", "transfer", "spent", "paid", "debited", "credited", "dispute", "raise", "call", "using", "thanks")
                     val banks = setOf("sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "idfc", "indus", "canara", "union", "rbl", "fed", "idbi", "citi", "scb", "hsbc", "jupiter")
 
                     val isJunk = (lower.contains("card") && !lower.contains("credit card")) ||

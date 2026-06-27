@@ -258,21 +258,6 @@ class HomeViewModel(
             }
         }
 
-        if (lastMonthExpense > 0) {
-            val diffPct = (((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100).toInt()
-             if (diffPct < 0) {
-                list.add(
-                    HomeInsight(
-                        "🎉",
-                        "SAVINGS",
-                        "Great job! Spending is down ${-diffPct}% vs last month"
-                    )
-                )
-            }
-        }
-
-
-
         return list
     }
 

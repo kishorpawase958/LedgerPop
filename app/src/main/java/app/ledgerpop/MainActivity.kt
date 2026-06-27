@@ -1,7 +1,9 @@
 package app.ledgerpop
 
 import android.content.Intent
+import android.database.CursorWindow
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -97,6 +99,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Fix for CursorWindow size limit (2MB) which causes crashes when fetching many transactions
+        try {
+            val field = CursorWindow::class.java.getDeclaredField("sCursorWindowSize")
+            field.isAccessible = true
+            field.set(null, 50 * 1024 * 1024) // 50MB
+        } catch (e: Exception) {
+            Log.e("LedgerPop", "Failed to increase CursorWindow size", e)
+        }
 
         handleIntent(intent)
 
