@@ -171,13 +171,14 @@ fun TransactionDetailScreen(
                                 originalAmount = originalAmount
                             )
 
-                            // Check if merchant or category changed
+                            // Check if merchant, category or billable changed
                             val oldMerchant = txn.merchant.trim()
                             val newMerchant = merchant.trim()
                             val merchantChanged = newMerchant != oldMerchant
                             val categoryChanged = category.trim() != txn.category.trim()
+                            val billableChanged = isBillable != txn.isBillable
 
-                            if ((merchantChanged || categoryChanged) && newMerchant.length >= 3) {
+                            if ((merchantChanged || categoryChanged || billableChanged) && newMerchant.length >= 3) {
                                 scope.launch {
                                     val similarToNew = db.smsTransactionDao().getSimilarTransactions(newMerchant, txn.id)
                                     val similarToOld = if (merchantChanged && oldMerchant.length >= 3) {
@@ -186,7 +187,9 @@ fun TransactionDetailScreen(
                                     
                                     val allSimilar = (similarToNew + similarToOld).distinctBy { it.id }
                                     val filtered = allSimilar.filter { 
-                                        it.category != category.trim() || (merchantChanged && it.merchant.trim() != newMerchant)
+                                        it.category != category.trim() || 
+                                        (merchantChanged && it.merchant.trim() != newMerchant) ||
+                                        it.isBillable != isBillable
                                     }
 
                                     if (filtered.isNotEmpty()) {
@@ -702,17 +705,29 @@ fun TransactionDetailScreen(
         BulkUpdateDialog(
             newMerchantName = merchant,
             newCategory = category,
+            newIsBillable = isBillable,
             similarTransactions = similarTxnsToUpdate,
             onDismiss = {
                 onSave(pendingSavedTxn!!)
                 showBulkUpdateDialog = false
             },
-            onApply = { selectedIds, updateMerchant, updateCategory ->
+            onApply = { selectedIds, updateMerchant, updateCategory, updateBillable ->
                 scope.launch {
                     when {
+                        updateMerchant && updateCategory && updateBillable -> 
+                            db.smsTransactionDao().updateBulk(selectedIds, merchant, category, isBillable)
                         updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                        updateMerchant && updateBillable -> {
+                            db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
+                            db.smsTransactionDao().updateBillableForIds(selectedIds, isBillable)
+                        }
+                        updateCategory && updateBillable -> {
+                            db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                            db.smsTransactionDao().updateBillableForIds(selectedIds, isBillable)
+                        }
                         updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
                         updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                        updateBillable -> db.smsTransactionDao().updateBillableForIds(selectedIds, isBillable)
                     }
                     onSave(pendingSavedTxn!!)
                     showBulkUpdateDialog = false

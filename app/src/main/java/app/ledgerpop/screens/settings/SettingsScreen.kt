@@ -37,12 +37,10 @@ import android.graphics.Canvas
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.painter.Painter
 import app.ledgerpop.R
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.ui.state.AppTheme
 import app.ledgerpop.ui.state.AppLogo
-import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)

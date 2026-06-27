@@ -128,7 +128,7 @@ class SmsImporter(
             }
 
             if (!shouldProcess) {
-                val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
+                val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
                 auditToInsert.add(
                     SmsAuditEntity(
                         sender = msg.sender,
@@ -148,7 +148,7 @@ class SmsImporter(
             // If it's a smart import, we might need to ignore the internal spam check in SmsParser
             val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
             if (parsed == null) {
-                val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
+                val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
                 auditToInsert.add(
                     SmsAuditEntity(
                         sender = msg.sender,
@@ -165,7 +165,7 @@ class SmsImporter(
                 continue
             }
 
-            val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
+            val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
             if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
                 skipped++
                 continue
@@ -239,7 +239,7 @@ class SmsImporter(
         }
 
         if (!shouldProcess) {
-            val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
+            val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
 
             auditDao.insert(
                 SmsAuditEntity(
@@ -260,7 +260,7 @@ class SmsImporter(
         val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
 
         if (parsed == null) {
-            val hashKey = buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
+            val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
 
             auditDao.insert(
                 SmsAuditEntity(
@@ -277,7 +277,7 @@ class SmsImporter(
             return null
         }
 
-        val hashKey = buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
+        val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
 
         if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
             Log.d(TAG, "Duplicate skipped: $hashKey")
@@ -325,18 +325,5 @@ class SmsImporter(
         return savedEntity
     }
 
-    private fun buildHashKey(
-        sender: String,
-        timestamp: Long,
-        amount: Double,
-        type: String,
-        refNo: String = ""
-    ): String {
-        if (refNo.isNotBlank()) {
-            return "${sender}_${refNo}_${amount}_${type}"
-        }
-        // Use a 5-second window to handle slight discrepancies between receiver and content provider
-        val rounded = (timestamp / 5000) * 5000
-        return "${sender}_${rounded}_${amount}_${type}"
-    }
+    // Moved to SmsParser.buildHashKey
 }

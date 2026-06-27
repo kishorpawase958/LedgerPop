@@ -23,7 +23,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.theme.MidnightPrimary
-import app.ledgerpop.ui.theme.Purple700
 
 @Composable
 fun ScrollableBarChart(

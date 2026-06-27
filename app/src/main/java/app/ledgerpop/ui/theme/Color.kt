@@ -6,7 +6,6 @@ import androidx.compose.ui.graphics.Color
 val Purple200 = Color(0xFFE1D5FF) // Very Light Purple
 val Purple500 = Color(0xFFBB86FC) // Signature Light Purple (Good for Dark Theme Primary)
 val Purple700 = Color(0xFF9C27B0) // Deep Purple (Good for Light Theme Primary / Containers)
-val Purple900 = Color(0xFF4A148C) // Darkest Purple
 
 // Functional Colors
 val SuccessGreen = Color(0xFF00B894)

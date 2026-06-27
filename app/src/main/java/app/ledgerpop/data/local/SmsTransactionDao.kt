@@ -23,6 +23,21 @@ interface SmsTransactionDao {
     @Query("SELECT * FROM sms_transactions ORDER BY transactionTime DESC")
     fun getAllTransactions(): Flow<List<SmsTransactionEntity>>
 
+    @Query("SELECT * FROM sms_transactions ORDER BY transactionTime ASC")
+    fun getAllTransactionsDateAsc(): Flow<List<SmsTransactionEntity>>
+
+    @Query("SELECT * FROM sms_transactions ORDER BY amount DESC")
+    fun getAllTransactionsAmountDesc(): Flow<List<SmsTransactionEntity>>
+
+    @Query("SELECT * FROM sms_transactions ORDER BY amount ASC")
+    fun getAllTransactionsAmountAsc(): Flow<List<SmsTransactionEntity>>
+
+    @Query("SELECT * FROM sms_transactions ORDER BY merchant COLLATE NOCASE ASC")
+    fun getAllTransactionsMerchantAsc(): Flow<List<SmsTransactionEntity>>
+
+    @Query("SELECT * FROM sms_transactions ORDER BY merchant COLLATE NOCASE DESC")
+    fun getAllTransactionsMerchantDesc(): Flow<List<SmsTransactionEntity>>
+
     @Query("SELECT * FROM sms_transactions WHERE id = :id")
     suspend fun getById(id: Int): SmsTransactionEntity?
 
@@ -108,6 +123,15 @@ interface SmsTransactionDao {
     @Query("UPDATE sms_transactions SET merchant = :merchant WHERE id IN (:ids)")
     suspend fun updateMerchantForIds(ids: List<Int>, merchant: String)
 
+    @Query("UPDATE sms_transactions SET isBillable = :isBillable WHERE id IN (:ids)")
+    suspend fun updateBillableForIds(ids: List<Int>, isBillable: Boolean)
+
     @Query("UPDATE sms_transactions SET category = :category, merchant = :merchant WHERE id IN (:ids)")
     suspend fun updateMerchantAndCategoryForIds(ids: List<Int>, merchant: String, category: String)
+
+    @Query("UPDATE sms_transactions SET category = :category, merchant = :merchant, isBillable = :isBillable WHERE id IN (:ids)")
+    suspend fun updateBulk(ids: List<Int>, merchant: String, category: String, isBillable: Boolean)
+
+    @Query("DELETE FROM sms_transactions WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Int>)
 }

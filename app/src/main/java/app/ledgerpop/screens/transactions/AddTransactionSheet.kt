@@ -332,6 +332,38 @@ fun AddTransactionDialog(
                     leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Notes, null, modifier = Modifier.size(20.dp)) }
                 )
 
+                Spacer(Modifier.height(16.dp))
+
+                Surface(
+                    onClick = { isBillable = !isBillable },
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(
+                                if (isBillable) Icons.Rounded.Analytics else Icons.Rounded.VisibilityOff,
+                                null,
+                                tint = if (isBillable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
+                            Column {
+                                Text("Include in Analytics", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    if (isBillable) "Counted in your totals" else "Hidden from totals",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                        Switch(checked = isBillable, onCheckedChange = { isBillable = it })
+                    }
+                }
+
                 Spacer(Modifier.height(24.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
@@ -362,7 +394,7 @@ fun AddTransactionDialog(
                             if (merchant.trim().length >= 3) {
                                 scope.launch {
                                     val similar = db.smsTransactionDao().getSimilarTransactions(merchant.trim(), -1)
-                                    val filtered = similar.filter { it.category != category.trim() }
+                                    val filtered = similar.filter { it.category != category.trim() || it.isBillable != isBillable }
                                     if (filtered.isNotEmpty()) {
                                         pendingAddedTxn = newTxn
                                         similarTxnsToUpdate = filtered
@@ -469,18 +501,30 @@ fun AddTransactionDialog(
             BulkUpdateDialog(
                 newMerchantName = merchant,
                 newCategory = category,
+                newIsBillable = isBillable,
                 similarTransactions = similarTxnsToUpdate,
                 onDismiss = {
                     onAdd(pendingAddedTxn!!)
                     showBulkUpdateDialog = false
                     onDismiss()
                 },
-                onApply = { selectedIds, updateMerchant, updateCategory ->
+                onApply = { selectedIds, updateMerchant, updateCategory, updateBillable ->
                     scope.launch {
                         when {
+                            updateMerchant && updateCategory && updateBillable -> 
+                                db.smsTransactionDao().updateBulk(selectedIds, merchant, category, isBillable)
                             updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, merchant, category)
+                            updateMerchant && updateBillable -> {
+                                db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
+                                db.smsTransactionDao().updateBillableForIds(selectedIds, isBillable)
+                            }
+                            updateCategory && updateBillable -> {
+                                db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                                db.smsTransactionDao().updateBillableForIds(selectedIds, isBillable)
+                            }
                             updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, merchant)
                             updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, category)
+                            updateBillable -> db.smsTransactionDao().updateBillableForIds(selectedIds, isBillable)
                         }
                         onAdd(pendingAddedTxn!!)
                         showBulkUpdateDialog = false

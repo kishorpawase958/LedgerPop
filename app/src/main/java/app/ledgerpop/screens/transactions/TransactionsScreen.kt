@@ -3,8 +3,10 @@ package app.ledgerpop.screens.transactions
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -15,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +42,7 @@ import app.ledgerpop.data.local.CustomCategoryEntity
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.ui.state.TrendSummary
+import app.ledgerpop.ui.state.TransactionSortOrder
 import app.ledgerpop.ui.viewmodel.TransactionsViewModel
 import app.ledgerpop.ui.components.ScrollableBarChart
 import app.ledgerpop.ui.components.BulkUpdateDialog
@@ -57,6 +61,7 @@ import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.IntOffset
+import androidx.activity.compose.BackHandler
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -95,9 +100,18 @@ fun TransactionsScreen(
     var isFabExpanded by remember { mutableStateOf(false) }
     var showAccountFilterPopup by remember { mutableStateOf(false) }
     var showCategoryFilterPopup by remember { mutableStateOf(false) }
+    var showSortPopup by remember { mutableStateOf(false) }
 
     // Track which ID was last handled to avoid re-opening on tab switches
     var lastHandledId by rememberSaveable { mutableIntStateOf(-1) }
+
+    var selectedIds by remember { mutableStateOf(setOf<Int>()) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showAnalyticsConfirm by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selectedIds.isNotEmpty()) {
+        selectedIds = emptySet()
+    }
 
     // Auto-select transaction if initialTransactionId is provided
     LaunchedEffect(initialTransactionId) {
@@ -112,7 +126,20 @@ fun TransactionsScreen(
         }
     }
 
-    val onTransactionClick = remember { { txn: SmsTransactionEntity -> selectedTxn = txn } }
+    val onTransactionClick = remember(selectedIds) { { txn: SmsTransactionEntity -> 
+        if (selectedIds.isNotEmpty()) {
+            selectedIds = if (selectedIds.contains(txn.id)) {
+                selectedIds - txn.id
+            } else {
+                selectedIds + txn.id
+            }
+        } else {
+            selectedTxn = txn
+        }
+    } }
+    val onTransactionLongClick = remember { { txn: SmsTransactionEntity -> 
+        selectedIds = selectedIds + txn.id
+    } }
     val onQuickCategoryClick = remember { { txn: SmsTransactionEntity -> quickCategoryTxn = txn } }
 
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -138,112 +165,145 @@ fun TransactionsScreen(
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                AnimatedContent(
-                    targetState = isSearchActive,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    label = "search_transition"
-                ) { active ->
-                    if (!active) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Transactions",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-
-                            // Small filter status row (Moved inside row to match Analytics styling)
+                if (selectedIds.isNotEmpty()) {
+                    SelectionTopBar(
+                        count = selectedIds.size,
+                        onClearSelection = { selectedIds = emptySet() },
+                        onSelectAll = { selectedIds = filtered.map { it.id }.toSet() },
+                        onDelete = { showDeleteConfirm = true },
+                        onRemoveFromAnalytics = { showAnalyticsConfirm = true }
+                    )
+                } else {
+                    AnimatedContent(
+                        targetState = isSearchActive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        label = "search_transition"
+                    ) { active ->
+                        if (!active) {
                             Row(
-                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                if (uiState.selectedFilter != "All") {
-                                    FilterStatusChip(uiState.selectedFilter) { viewModel.onFilterChange("All") }
-                                }
-                                if (uiState.selectedAccount != "All") {
-                                    FilterStatusChip(uiState.selectedAccount) { viewModel.onAccountChange("All") }
-                                }
-                                if (uiState.selectedCategory != "All") {
-                                    FilterStatusChip(uiState.selectedCategory) { viewModel.onCategoryChange("All") }
-                                }
-                                if (uiState.startDateMillis != null) {
-                                    FilterStatusChip("Date") { viewModel.clearDates() }
-                                }
-                            }
-
-                            IconButton(onClick = { isSearchActive = true }) {
-                                Icon(
-                                    Icons.Rounded.Search,
-                                    contentDescription = "Search",
-                                    tint = MaterialTheme.colorScheme.onBackground
+                                Text(
+                                    text = "Transactions",
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    color = MaterialTheme.colorScheme.onBackground
                                 )
-                            }
-                        }
-                    } else {
-                        LaunchedEffect(Unit) {
-                            focusRequester.requestFocus()
-                        }
-                        BasicTextField(
-                            value = searchQuery,
-                            onValueChange = viewModel::onQueryChange,
-                            modifier = Modifier
-                                .focusRequester(focusRequester)
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    RoundedCornerShape(24.dp)
-                                ),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            singleLine = true,
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            decorationBox = { innerTextField ->
+
+                                // Small filter status row (Moved inside row to match Analytics styling)
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    IconButton(onClick = {
-                                        isSearchActive = false
-                                        viewModel.onQueryChange("")
-                                    }) {
-                                        Icon(
-                                            Icons.AutoMirrored.Rounded.ArrowBack,
-                                            contentDescription = "Back",
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Box(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                                        if (searchQuery.isEmpty()) {
-                                            Text(
-                                                "Search transactions...",
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontSize = 15.sp,
-                                                    color = MaterialTheme.colorScheme.outline
-                                                )
+                                    if (uiState.selectedSortOrder != TransactionSortOrder.DATE_DESC) {
+                                        FilterStatusChip(uiState.selectedSortOrder.label) {
+                                            viewModel.onSortOrderChange(
+                                                TransactionSortOrder.DATE_DESC
                                             )
                                         }
-                                        innerTextField()
                                     }
-                                    if (searchQuery.isNotEmpty()) {
-                                        IconButton(onClick = { viewModel.onQueryChange("") }) {
-                                            Icon(Icons.Rounded.Close, null, modifier = Modifier.size(18.dp))
+                                    if (uiState.selectedFilter != "All") {
+                                        FilterStatusChip(uiState.selectedFilter) {
+                                            viewModel.onFilterChange(
+                                                "All"
+                                            )
                                         }
-                                    } else {
-                                        Spacer(Modifier.width(16.dp))
+                                    }
+                                    if (uiState.selectedAccount != "All") {
+                                        FilterStatusChip(uiState.selectedAccount) {
+                                            viewModel.onAccountChange(
+                                                "All"
+                                            )
+                                        }
+                                    }
+                                    if (uiState.selectedCategory != "All") {
+                                        FilterStatusChip(uiState.selectedCategory) {
+                                            viewModel.onCategoryChange(
+                                                "All"
+                                            )
+                                        }
+                                    }
+                                    if (uiState.startDateMillis != null) {
+                                        FilterStatusChip("Date") { viewModel.clearDates() }
                                     }
                                 }
+
+                                IconButton(onClick = { isSearchActive = true }) {
+                                    Icon(
+                                        Icons.Rounded.Search,
+                                        contentDescription = "Search",
+                                        tint = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
                             }
-                        )
+                        } else {
+                            LaunchedEffect(Unit) {
+                                focusRequester.requestFocus()
+                            }
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = viewModel::onQueryChange,
+                                modifier = Modifier
+                                    .focusRequester(focusRequester)
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        RoundedCornerShape(24.dp)
+                                    ),
+                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                singleLine = true,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                decorationBox = { innerTextField ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(onClick = {
+                                            isSearchActive = false
+                                            viewModel.onQueryChange("")
+                                        }) {
+                                            Icon(
+                                                Icons.AutoMirrored.Rounded.ArrowBack,
+                                                contentDescription = "Back",
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        Box(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                                            if (searchQuery.isEmpty()) {
+                                                Text(
+                                                    "Search transactions...",
+                                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                                        fontSize = 15.sp,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(onClick = { viewModel.onQueryChange("") }) {
+                                                Icon(
+                                                    Icons.Rounded.Close,
+                                                    null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        } else {
+                                            Spacer(Modifier.width(16.dp))
+                                        }
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -359,9 +419,12 @@ fun TransactionsScreen(
                         ) { txn ->
                             TransactionRow(
                                 txn = txn,
+                                isSelected = selectedIds.contains(txn.id),
+                                isSelectionMode = selectedIds.isNotEmpty(),
                                 customCategories = uiState.customCategories,
                                 allTransactions = uiState.allTransactions,
                                 onClick = onTransactionClick,
+                                onLongClick = onTransactionLongClick,
                                 onCategoryClick = onQuickCategoryClick
                             )
                         }
@@ -400,6 +463,11 @@ fun TransactionsScreen(
             onExpandedChange = { isFabExpanded = it },
             actions = listOf(
                 
+                SpeedDialAction(
+                    icon = Icons.AutoMirrored.Rounded.Sort,
+                    label = "Sort",
+                    onClick = { showSortPopup = true }
+                ),
                 SpeedDialAction(
                     icon = Icons.Rounded.AccountBalanceWallet,
                     label = "Account",
@@ -451,6 +519,21 @@ fun TransactionsScreen(
             onSelect = { viewModel.onCategoryChange(it) },
             onDismiss = { showCategoryFilterPopup = false },
             emojiProvider = { CategoryEngine.emoji(it, uiState.customCategories) },
+            yOffset = popupYOffset
+        )
+    }
+
+    if (showSortPopup) {
+        FloatingFilterPopup(
+            title = "Sort By",
+            options = TransactionSortOrder.entries.map { it.label },
+            selected = uiState.selectedSortOrder.label,
+            onSelect = { label ->
+                TransactionSortOrder.entries.find { it.label == label }?.let {
+                    viewModel.onSortOrderChange(it)
+                }
+            },
+            onDismiss = { showSortPopup = false },
             yOffset = popupYOffset
         )
     }
@@ -549,6 +632,97 @@ fun TransactionsScreen(
             onAdd = { viewModel.addTransaction(it) }
         )
     }
+
+    // ── Bulk Actions Confirmation Dialogs ────────────────────────────────────
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Transactions") },
+            text = { Text("Are you sure you want to delete ${selectedIds.size} transactions? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteTransactions(selectedIds.toList())
+                        selectedIds = emptySet()
+                        showDeleteConfirm = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showAnalyticsConfirm) {
+        AlertDialog(
+            onDismissRequest = { showAnalyticsConfirm = false },
+            title = { Text("Exclude from Analytics") },
+            text = { Text("Exclude ${selectedIds.size} transactions from analytics?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.updateAnalytics(selectedIds.toList(), false)
+                        selectedIds = emptySet()
+                        showAnalyticsConfirm = false
+                    }
+                ) { Text("Exclude") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAnalyticsConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SelectionTopBar(
+    count: Int,
+    onClearSelection: () -> Unit,
+    onSelectAll: () -> Unit,
+    onDelete: () -> Unit,
+    onRemoveFromAnalytics: () -> Unit
+) {
+    Surface(
+        color = Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClearSelection) {
+                Icon(Icons.Rounded.Close, contentDescription = "Clear Selection")
+            }
+            Text(
+                text = "$count selected",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            )
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Rounded.SelectAll, contentDescription = "Select All")
+            }
+            IconButton(onClick = onRemoveFromAnalytics) {
+                Icon(
+                    Icons.Rounded.VisibilityOff,
+                    contentDescription = "Exclude from Analytics",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -585,12 +759,16 @@ private fun FilterStatusChip(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TransactionRow(
     txn: SmsTransactionEntity,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
     customCategories: List<CustomCategoryEntity> = emptyList(),
     allTransactions: List<SmsTransactionEntity> = emptyList(),
     onClick: (SmsTransactionEntity) -> Unit,
+    onLongClick: (SmsTransactionEntity) -> Unit,
     onCategoryClick: (SmsTransactionEntity) -> Unit
 ) {
     val isDebit = txn.type == "DEBIT"
@@ -619,12 +797,31 @@ private fun TransactionRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable { onClick(txn) }
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                else MaterialTheme.colorScheme.surface
+            )
+            .combinedClickable(
+                onClick = { onClick(txn) },
+                onLongClick = { onLongClick(txn) }
+            )
             .alpha(if (isBillable) 1f else 0.45f)
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Checkbox for selection
+        if (isSelectionMode || isSelected) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onClick(txn) },
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .size(24.dp)
+            )
+        }
+
+        // Icon (Clickable for quick category change)
+
         // Icon (Clickable for quick category change)
         Box(
             modifier = Modifier
@@ -855,17 +1052,29 @@ fun QuickCategoryUpdateDialog(
         BulkUpdateDialog(
             newMerchantName = txn.merchant,
             newCategory = selectedCategory,
+            newIsBillable = txn.isBillable,
             similarTransactions = similarTxnsToUpdate,
             onDismiss = {
                 onSave(pendingSavedTxn!!)
                 showBulkUpdateDialog = false
             },
-            onApply = { selectedIds, updateMerchant, updateCategory ->
+            onApply = { selectedIds, updateMerchant, updateCategory, updateBillable ->
                 scope.launch {
                     when {
+                        updateMerchant && updateCategory && updateBillable -> 
+                            db.smsTransactionDao().updateBulk(selectedIds, txn.merchant, selectedCategory, txn.isBillable)
                         updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, txn.merchant, selectedCategory)
+                        updateMerchant && updateBillable -> {
+                            db.smsTransactionDao().updateMerchantForIds(selectedIds, txn.merchant)
+                            db.smsTransactionDao().updateBillableForIds(selectedIds, txn.isBillable)
+                        }
+                        updateCategory && updateBillable -> {
+                            db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                            db.smsTransactionDao().updateBillableForIds(selectedIds, txn.isBillable)
+                        }
                         updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, txn.merchant)
                         updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                        updateBillable -> db.smsTransactionDao().updateBillableForIds(selectedIds, txn.isBillable)
                     }
                     onSave(pendingSavedTxn!!)
                     showBulkUpdateDialog = false

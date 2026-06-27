@@ -1131,17 +1131,29 @@ fun QuickCategoryUpdateDialog(
         BulkUpdateDialog(
             newMerchantName = txn.merchant,
             newCategory = selectedCategory,
+            newIsBillable = txn.isBillable,
             similarTransactions = similarTxnsToUpdate,
             onDismiss = {
                 onSave(pendingSavedTxn!!)
                 showBulkUpdateDialog = false
             },
-            onApply = { selectedIds, updateMerchant, updateCategory ->
+            onApply = { selectedIds, updateMerchant, updateCategory, updateBillable ->
                 scope.launch {
                     when {
+                        updateMerchant && updateCategory && updateBillable -> 
+                            db.smsTransactionDao().updateBulk(selectedIds, txn.merchant, selectedCategory, txn.isBillable)
                         updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, txn.merchant, selectedCategory)
+                        updateMerchant && updateBillable -> {
+                            db.smsTransactionDao().updateMerchantForIds(selectedIds, txn.merchant)
+                            db.smsTransactionDao().updateBillableForIds(selectedIds, txn.isBillable)
+                        }
+                        updateCategory && updateBillable -> {
+                            db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                            db.smsTransactionDao().updateBillableForIds(selectedIds, txn.isBillable)
+                        }
                         updateMerchant -> db.smsTransactionDao().updateMerchantForIds(selectedIds, txn.merchant)
                         updateCategory -> db.smsTransactionDao().updateCategoryForIds(selectedIds, selectedCategory)
+                        updateBillable -> db.smsTransactionDao().updateBillableForIds(selectedIds, txn.isBillable)
                     }
                     onSave(pendingSavedTxn!!)
                     showBulkUpdateDialog = false

@@ -8,6 +8,7 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.state.TransactionsUiState
+import app.ledgerpop.ui.state.TransactionSortOrder
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
@@ -32,6 +33,7 @@ class TransactionsViewModel(
     private val _selectedFilter = MutableStateFlow("All")
     private val _selectedCategory = MutableStateFlow("All")
     private val _selectedAccount = MutableStateFlow("All")
+    private val _selectedSortOrder = MutableStateFlow(TransactionSortOrder.DATE_DESC)
     private val _selectedMonth = MutableStateFlow<String?>(null)
     private val _dateRange = MutableStateFlow<Pair<Long?, Long?>>(null to null)
     private val monthFormat = SimpleDateFormat("MMM yy", Locale.getDefault())
@@ -41,6 +43,14 @@ class TransactionsViewModel(
         val filter: String,
         val category: String,
         val account: String,
+        val sortOrder: TransactionSortOrder,
+        val month: String?,
+        val dateRange: Pair<Long?, Long?>
+    )
+
+    private data class SecondaryFilters(
+        val account: String,
+        val sortOrder: TransactionSortOrder,
         val month: String?,
         val dateRange: Pair<Long?, Long?>
     )
@@ -51,15 +61,18 @@ class TransactionsViewModel(
             _selectedFilter,
             _selectedCategory
         ) { q, f, c -> Triple(q, f, c) },
-        combine(_selectedAccount, _selectedMonth, _dateRange) { a, m, r -> Triple(a, m, r) }
+        combine(_selectedAccount, _selectedSortOrder, _selectedMonth, _dateRange) { a, s, m, r -> 
+            SecondaryFilters(a, s, m, r)
+        }
     ) { t1, t2 ->
         InternalFilters(
             query = t1.first,
             filter = t1.second,
             category = t1.third,
-            account = t2.first,
-            month = t2.second,
-            dateRange = t2.third
+            account = t2.account,
+            sortOrder = t2.sortOrder,
+            month = t2.month,
+            dateRange = t2.dateRange
         )
     }
 
@@ -110,6 +123,15 @@ class TransactionsViewModel(
                     val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
                     monthFormat.format(cal.time) == f.month
                 }
+            }.let { list ->
+                when (f.sortOrder) {
+                    TransactionSortOrder.DATE_DESC -> list.sortedByDescending { it.transactionTime }
+                    TransactionSortOrder.DATE_ASC -> list.sortedBy { it.transactionTime }
+                    TransactionSortOrder.AMOUNT_DESC -> list.sortedByDescending { it.amount }
+                    TransactionSortOrder.AMOUNT_ASC -> list.sortedBy { it.amount }
+                    TransactionSortOrder.MERCHANT_ASC -> list.sortedBy { it.merchant.lowercase() }
+                    TransactionSortOrder.MERCHANT_DESC -> list.sortedByDescending { it.merchant.lowercase() }
+                }
             }
 
             // Trend chart shows all historical data for the current search/category/account, ignoring date range filters
@@ -153,6 +175,7 @@ class TransactionsViewModel(
                 selectedFilter = f.filter,
                 selectedCategory = f.category,
                 selectedAccount = f.account,
+                selectedSortOrder = f.sortOrder,
                 startDateMillis = start,
                 endDateMillis = end,
                 selectedMonth = f.month,
@@ -170,6 +193,7 @@ class TransactionsViewModel(
     fun onFilterChange(filter: String) { _selectedFilter.value = filter }
     fun onCategoryChange(category: String) { _selectedCategory.value = category }
     fun onAccountChange(account: String) { _selectedAccount.value = account }
+    fun onSortOrderChange(order: TransactionSortOrder) { _selectedSortOrder.value = order }
 
     fun onMonthToggle(month: String) {
         _selectedMonth.value = if (_selectedMonth.value == month) null else month
@@ -189,6 +213,14 @@ class TransactionsViewModel(
 
     fun deleteTransaction(txn: SmsTransactionEntity) {
         viewModelScope.launch { repository.delete(txn) }
+    }
+
+    fun deleteTransactions(ids: List<Int>) {
+        viewModelScope.launch { repository.deleteByIds(ids) }
+    }
+
+    fun updateAnalytics(ids: List<Int>, include: Boolean) {
+        viewModelScope.launch { repository.updateBillableForIds(ids, include) }
     }
 
     fun addTransaction(txn: SmsTransactionEntity) {

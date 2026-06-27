@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AccountAliasEntity::class,
         SmartRuleEntity::class
     ],
-    version = 11, // bumped from 10
+    version = 13, // bumped from 12
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -29,6 +29,23 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun smartRuleDao(): SmartRuleDao
 
     companion object {
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Drop the unique index on sms_audit.hashKey
+                db.execSQL("DROP INDEX IF EXISTS `index_sms_audit_hashKey`")
+                // Re-create it as a non-unique index
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sms_audit_hashKey` ON `sms_audit` (`hashKey`)")
+                // Add new index for performance
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sms_audit_sender_timestamp` ON `sms_audit` (`sender`, `timestamp`)")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sms_audit ADD COLUMN reportTimestamp INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 1. Clean up existing duplicates to ensure the UNIQUE index can be created safely.
@@ -116,7 +133,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
                     LedgerPopDatabase::class.java,
                     "ledgerpop_db"
                 )
-                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                     .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }

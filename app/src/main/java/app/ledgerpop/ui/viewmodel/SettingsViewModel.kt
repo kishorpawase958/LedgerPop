@@ -596,6 +596,7 @@ class SettingsViewModel(
                                 parsedType = obj.optString("parsedType", ""),
                                 reportType = obj.optString("reportType", ""),
                                 reportNote = obj.optString("reportNote", ""),
+                                reportTimestamp = obj.optLong("reportTimestamp", 0L),
                                 hashKey = obj.getString("hashKey")
                             ))
                         }

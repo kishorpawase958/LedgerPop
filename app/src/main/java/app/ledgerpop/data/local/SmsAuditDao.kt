@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -11,6 +12,9 @@ interface SmsAuditDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(audit: SmsAuditEntity): Long
+
+    @Update
+    suspend fun update(audit: SmsAuditEntity)
 
     @Query("SELECT * FROM sms_audit ORDER BY timestamp DESC")
     fun getAll(): Flow<List<SmsAuditEntity>>
@@ -30,10 +34,10 @@ interface SmsAuditDao {
 
     @Query("""
         UPDATE sms_audit 
-        SET reportType = :reportType, reportNote = :note 
+        SET reportType = :reportType, reportNote = :note, reportTimestamp = :timestamp
         WHERE id = :id
     """)
-    suspend fun updateReport(id: Int, reportType: String, note: String)
+    suspend fun updateReport(id: Int, reportType: String, note: String, timestamp: Long)
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(audits: List<SmsAuditEntity>)

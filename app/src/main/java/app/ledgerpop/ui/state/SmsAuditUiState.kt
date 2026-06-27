@@ -19,11 +19,12 @@ data class SmsAuditUiState(
 
     // Report dialog
     val showReportDialog: Boolean = false,
+    val showBulkReportDialog: Boolean = false,
     val reportingEntry: SmsAuditEntity? = null,
     val reportNote: String = "",
 
-    // Detail expand — id of currently expanded SMS body
-    val expandedEntryId: Int? = null,
+    // Detail expand — ids of expanded SMS bodies
+    val expandedAuditIds: Set<Int> = emptySet(),
 
     // Retroactive correction
     val showSimilarEntriesDialog: Boolean = false,
@@ -32,5 +33,11 @@ data class SmsAuditUiState(
     val selectedSimilarIds: Set<Int> = emptySet(),
     val retroactiveReportType: String = "",
 
-    val isLoading: Boolean = true
+    val selectedAuditIds: Set<Int> = emptySet(),
+    val isSelectionMode: Boolean = false,
+
+    val isLoading: Boolean = true,
+    val loadingProgress: Float? = null,
+    val processingCount: Int = 0,
+    val processingCurrent: Int = 0
 )
