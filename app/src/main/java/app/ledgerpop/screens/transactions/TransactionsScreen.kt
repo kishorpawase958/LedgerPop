@@ -353,12 +353,76 @@ fun TransactionsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("All", "Debit", "Credit").forEach { type ->
+
+                    Box {
+                        IconButton(
+                            onClick = { showSortPopup = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.Sort,
+                                contentDescription = "Sort",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showSortPopup,
+                            onDismissRequest = { showSortPopup = false },
+                            shape = RoundedCornerShape(20.dp),
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.width(200.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Text(
+                                    text = "Sort By",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                                TransactionSortOrder.entries.forEach { order ->
+                                    val isSelected = uiState.selectedSortOrder == order
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = order.label,
+                                                style = MaterialTheme.typography.bodyLarge
+                                            )
+                                        },
+                                        onClick = {
+                                            viewModel.onSortOrderChange(order)
+                                            showSortPopup = false
+                                        },
+                                        trailingIcon = {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        },
+                                        colors = MenuDefaults.itemColors(
+                                            textColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("Debit", "Credit").forEach { type ->
                             val isSelected = uiState.selectedFilter == type
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { viewModel.onFilterChange(type) },
+                                onClick = { viewModel.onFilterChange(if (isSelected) "All" else type) },
                                 label = { Text(type, style = MaterialTheme.typography.labelMedium) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -377,6 +441,7 @@ fun TransactionsScreen(
                                 shape = RoundedCornerShape(12.dp)
                             )
                         }
+
                     }
 
                     Text(
@@ -473,12 +538,6 @@ fun TransactionsScreen(
             isExpanded = isFabExpanded,
             onExpandedChange = { isFabExpanded = it },
             actions = listOf(
-                
-                SpeedDialAction(
-                    icon = Icons.AutoMirrored.Rounded.Sort,
-                    label = "Sort",
-                    onClick = { showSortPopup = true }
-                ),
                 SpeedDialAction(
                     icon = Icons.Rounded.AccountBalanceWallet,
                     label = "Account",
@@ -534,20 +593,6 @@ fun TransactionsScreen(
         )
     }
 
-    if (showSortPopup) {
-        FloatingFilterPopup(
-            title = "Sort By",
-            options = TransactionSortOrder.entries.map { it.label },
-            selected = uiState.selectedSortOrder.label,
-            onSelect = { label ->
-                TransactionSortOrder.entries.find { it.label == label }?.let {
-                    viewModel.onSortOrderChange(it)
-                }
-            },
-            onDismiss = { showSortPopup = false },
-            yOffset = popupYOffset
-        )
-    }
 
     // ── Quick Category Update Dialog ─────────────────────────────────────────
     quickCategoryTxn?.let { txn ->
