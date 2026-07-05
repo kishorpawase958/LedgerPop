@@ -451,15 +451,15 @@ fun TransactionsScreen(
                     )
                 }
 
-                val isAmountSort = uiState.selectedSortOrder == TransactionSortOrder.AMOUNT_DESC || 
-                                 uiState.selectedSortOrder == TransactionSortOrder.AMOUNT_ASC
+                val showMonthlyGroups = uiState.selectedSortOrder == TransactionSortOrder.DATE_DESC || 
+                                       uiState.selectedSortOrder == TransactionSortOrder.DATE_ASC
 
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    if (isAmountSort) {
+                    if (!showMonthlyGroups) {
                         items(
                             items = filtered,
                             key = { it.id }
@@ -1018,7 +1018,7 @@ fun QuickCategoryUpdateDialog(
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
     val scope = rememberCoroutineScope()
-    
+
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
     
     var showBulkUpdateDialog by remember { mutableStateOf(false) }

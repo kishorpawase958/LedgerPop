@@ -114,7 +114,7 @@ fun CategoryAccountPicker(
                         items(allOptions) { option ->
                             val isCategory = title.contains("Category", ignoreCase = true)
                             val isAccount = title.contains("Account", ignoreCase = true)
-                            
+
                             val currentEmoji = when {
                                 isCategory -> customCategories.find { it.name == option }?.emoji ?: CategoryEngine.emoji(option, customCategories)
                                 isAccount -> accounts.find { it.name == option }?.icon ?: "🏦"

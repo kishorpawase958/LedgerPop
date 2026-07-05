@@ -97,15 +97,11 @@ fun TransactionDetailScreen(
     // Expense/Income toggle removed; type is derived from the transaction
     val isExpense = remember(txn) { txn.type == "DEBIT" }
 
-    val categories = remember(isExpense, existingTransactions, customCategories) {
+    val categories = remember(isExpense, customCategories) {
         val type = if (isExpense) "DEBIT" else "CREDIT"
         val engineCats = if (isExpense) CategoryEngine.debitCategories() else CategoryEngine.creditCategories()
         val customOfType = customCategories.filter { it.type == type }.map { it.name }
-        val existingOfType = existingTransactions
-            .filter { it.type == type }
-            .map { it.category }
-            .filter { it.isNotBlank() }
-        (engineCats + customOfType + existingOfType).distinct().sorted()
+        (engineCats + customOfType).distinct().sorted()
     }
     
     val accountOptions = remember(accounts, existingTransactions) {

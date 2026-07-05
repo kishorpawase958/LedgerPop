@@ -57,15 +57,11 @@ fun AddTransactionDialog(
     
     var isExpense by remember { mutableStateOf(true) }
 
-    val categories = remember(isExpense, existingTransactions, customCategories) {
+    val categories = remember(isExpense, customCategories) {
         val type = if (isExpense) "DEBIT" else "CREDIT"
         val engineCats = if (isExpense) CategoryEngine.debitCategories() else CategoryEngine.creditCategories()
         val customOfType = customCategories.filter { it.type == type }.map { it.name }
-        val existingOfType = existingTransactions
-            .filter { it.type == type }
-            .map { it.category }
-            .filter { it.isNotBlank() }
-        (engineCats + customOfType + existingOfType).distinct().sorted()
+        (engineCats + customOfType).distinct().sorted()
     }
     
     val accountOptions = remember(accounts, existingTransactions) {
@@ -95,7 +91,7 @@ fun AddTransactionDialog(
             if (historicalCategory != null) {
                 category = historicalCategory
             } else {
-                val engineCat = CategoryEngine.categorize(trimmed, "", "")
+                val engineCat = CategoryEngine.categorize(trimmed, "", "", type = if (isExpense) "DEBIT" else "CREDIT")
                 if (engineCat != "Other") category = engineCat
             }
         } else if (trimmed.isEmpty()) {

@@ -302,6 +302,50 @@ class SettingsViewModel(
         }
     }
 
+    fun recategorizeAllTransactions() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isImporting = true, lastImportMessage = "Recategorizing transactions...") }
+            try {
+                val transactions = db.smsTransactionDao().getAllTransactionsSync()
+                val customEntities = db.customCategoryDao().getAllSync()
+                val customCats = customEntities.map { 
+                    app.ledgerpop.data.category.CustomCategory(
+                        name = it.name,
+                        emoji = it.emoji,
+                        type = it.type
+                    )
+                }
+
+                val updated = transactions.map { txn ->
+                    val newCategory = app.ledgerpop.data.category.CategoryEngine.categorize(
+                        merchant = txn.merchant,
+                        body = txn.body,
+                        sender = txn.sender,
+                        customCategories = customCats,
+                        type = txn.type
+                    )
+                    txn.copy(category = newCategory)
+                }
+
+                db.smsTransactionDao().insertAll(updated)
+                
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(
+                        isImporting = false,
+                        lastImportMessage = "Successfully recategorized ${updated.size} transactions."
+                    ) }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(
+                        isImporting = false,
+                        lastImportMessage = "Recategorization failed: ${e.message}"
+                    ) }
+                }
+            }
+        }
+    }
+
     fun updateAccount(id: Int, newName: String, newIcon: String, newType: String) {
         viewModelScope.launch {
             val accounts = db.accountDao().getAllSync()
@@ -668,7 +712,10 @@ class SettingsViewModel(
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(isImporting = false, lastImportMessage = "Restore failed: ${e.message}") }
+                    _uiState.update { it.copy(
+                        isImporting = false, 
+                        lastImportMessage = "Restore failed: ${e.message}"
+                    ) }
                 }
             }
         }
@@ -692,7 +739,7 @@ class SettingsViewModel(
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    _uiState.update { it.copy(isImporting = false, lastImportMessage = "CSV Import failed: ${e.message}") }
+                    _uiState.update { it.copy(isImporting = false, lastImportMessage = "CSV Import failed: ${e.message}" ) }
                 }
             }
         }

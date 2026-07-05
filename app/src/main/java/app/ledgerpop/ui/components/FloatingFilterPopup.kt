@@ -97,7 +97,7 @@ fun FloatingFilterPopup(
                                 ) {
                                     if (emojiProvider != null) {
                                         Text(
-                                            text = emojiProvider(option), 
+                                            text = emojiProvider(option),
                                             modifier = Modifier.padding(end = 12.dp),
                                             style = MaterialTheme.typography.titleMedium
                                         )

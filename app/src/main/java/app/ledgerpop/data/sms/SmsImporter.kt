@@ -53,8 +53,8 @@ class SmsImporter(
         return aliasDao?.getTargetName(name) ?: name
     }
 
-    private suspend fun resolveCategory(merchant: String, body: String, sender: String): String {
-        if (merchant.isBlank()) return CategoryEngine.categorize(merchant, body, sender)
+    private suspend fun resolveCategory(merchant: String, body: String, sender: String, type: String): String {
+        if (merchant.isBlank()) return CategoryEngine.categorize(merchant, body, sender, type = type)
         
         // 1. Try lookback in history for this merchant (using normalized name for better hits)
         val normalized = CategoryEngine.normalizeMerchant(merchant)
@@ -72,13 +72,13 @@ class SmsImporter(
         }
         
         // 2. Fallback to CategoryEngine auto-categorization
-        return CategoryEngine.categorize(merchant, body, sender)
+        return CategoryEngine.categorize(merchant, body, sender, type = type)
     }
 
-    private suspend fun getSmartAction(sender: String, body: String): String? {
+    private suspend fun getSmartAction(sender: String, body: String, rules: List<app.ledgerpop.data.local.SmartRuleEntity>? = null): String? {
         val structure = SmsParser.getStructure(body)
-        val rules = smartRuleDao?.getBySender(sender) ?: return null
-        return rules.find { it.bodyStructure == structure }?.ruleType
+        val senderRules = rules ?: smartRuleDao?.getBySender(sender) ?: return null
+        return senderRules.find { it.bodyStructure == structure }?.ruleType
     }
 
     suspend fun importInbox(
@@ -90,11 +90,20 @@ class SmsImporter(
             return ImportResult()
         }
 
-        val messages = smsReader.readTransactionSms()
+        // Optimization: Fetch only messages since fromMillis if provided
+        val messages = smsReader.readTransactionSms(since = fromMillis ?: 0L)
         Log.d(TAG, "Total SMS read from inbox: ${messages.size}")
+
+        // Pre-fetch all smart rules for batch processing
+        val allRules = smartRuleDao?.getAll()?.groupBy { it.sender } ?: emptyMap()
+        
+        // Pre-fetch recent audit hash keys to avoid duplicate checks in DB loop
+        val recentAuditHashes = auditDao.getAllSync().take(1000).map { it.hashKey }.toHashSet()
+        val recentTransactionHashes = dao.getAllTransactionsSync().take(1000).map { it.hashKey }.toHashSet()
 
         val transactionsToInsert = mutableListOf<SmsTransactionEntity>()
         val auditToInsert = mutableListOf<SmsAuditEntity>()
+        val categoryCache = mutableMapOf<String, String>()
 
         var imported = 0
         var failed = 0
@@ -106,14 +115,9 @@ class SmsImporter(
             if (toMillis != null && msg.timestamp > toMillis) continue
 
             scanned++
-
-            // If it's already in audit, skip completely
-            if (auditDao.existsDuplicate(msg.sender, msg.body, msg.timestamp) > 0) {
-                skipped++
-                continue
-            }
-
-            val smartAction = getSmartAction(msg.sender, msg.body)
+            
+            val senderKey: String = msg.sender
+            val smartAction = getSmartAction(senderKey, msg.body, allRules[senderKey])
 
             val shouldProcess = when (smartAction) {
                 "ALWAYS_IMPORT" -> true
@@ -121,14 +125,18 @@ class SmsImporter(
                 else -> SmsFilter.shouldProcess(msg.sender, msg.body)
             }
 
-            val reason = when (smartAction) {
-                "ALWAYS_IMPORT" -> "Smart Rule: ALWAYS_IMPORT"
-                "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
-                else -> SmsFilter.skipReason(msg.sender, msg.body)
-            }
-
             if (!shouldProcess) {
+                val reason = when (smartAction) {
+                    "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
+                    else -> SmsFilter.skipReason(msg.sender, msg.body)
+                }
+                
                 val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
+                if (recentAuditHashes.contains(hashKey)) {
+                    skipped++
+                    continue
+                }
+                
                 auditToInsert.add(
                     SmsAuditEntity(
                         sender = msg.sender,
@@ -145,10 +153,14 @@ class SmsImporter(
                 continue
             }
 
-            // If it's a smart import, we might need to ignore the internal spam check in SmsParser
             val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
             if (parsed == null) {
                 val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
+                if (recentAuditHashes.contains(hashKey)) {
+                    skipped++
+                    continue
+                }
+
                 auditToInsert.add(
                     SmsAuditEntity(
                         sender = msg.sender,
@@ -166,12 +178,20 @@ class SmsImporter(
             }
 
             val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, parsed.amount, parsed.type, parsed.refNo)
-            if (dao.exists(hashKey) > 0 || dao.existsDuplicate(msg.sender, msg.body, parsed.amount, msg.timestamp) > 0) {
+            
+            // Fast check against pre-fetched hashes
+            if (recentTransactionHashes.contains(hashKey) || recentAuditHashes.contains(hashKey)) {
                 skipped++
                 continue
             }
 
             val merchant = resolveMerchantName(parsed.merchant)
+            
+            // Use local cache to speed up category resolution for common merchants
+            val category = categoryCache.getOrPut(merchant) {
+                resolveCategory(merchant, msg.body, msg.sender, parsed.type)
+            }
+
             transactionsToInsert.add(
                 SmsTransactionEntity(
                     sender = msg.sender,
@@ -179,7 +199,7 @@ class SmsImporter(
                     amount = parsed.amount,
                     type = parsed.type,
                     merchant = merchant,
-                    category = resolveCategory(merchant, msg.body, msg.sender),
+                    category = category,
                     bank = parsed.bank,
                     accountHint = resolveAccountName(parsed.accountName),
                     isBillable = parsed.includeInAnalytics,
@@ -200,6 +220,16 @@ class SmsImporter(
                 )
             )
             imported++
+            
+            // Batch inserts every 100 items to avoid keeping too much in memory
+            if (transactionsToInsert.size >= 100) {
+                dao.insertAll(transactionsToInsert)
+                transactionsToInsert.clear()
+            }
+            if (auditToInsert.size >= 100) {
+                auditDao.insertAll(auditToInsert)
+                auditToInsert.clear()
+            }
         }
 
         if (transactionsToInsert.isNotEmpty()) {
@@ -294,7 +324,7 @@ class SmsImporter(
             merchant = resolvedMerchant,
 
             // Map the newly extracted category or lookback history
-            category = resolveCategory(resolvedMerchant, msg.body, msg.sender),
+            category = resolveCategory(resolvedMerchant, msg.body, msg.sender, parsed.type),
 
             bank = parsed.bank,
 
