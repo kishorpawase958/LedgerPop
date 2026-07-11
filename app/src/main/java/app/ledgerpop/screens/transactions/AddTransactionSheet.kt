@@ -67,13 +67,17 @@ fun AddTransactionDialog(
     val accountOptions = remember(accounts, existingTransactions) {
         val managed = accounts.map { it.name }
         val existing = existingTransactions.map { it.accountHint }.filter { it.isNotBlank() }
-        (managed + existing).distinct().sorted()
+        (managed + existing + "Cash").distinct().sorted()
     }
 
     var amount by remember { mutableStateOf("") }
     var merchant by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
-    var accountHint by remember { mutableStateOf("") }
+    var accountHint by remember { mutableStateOf("Cash") }
+
+    val selectedAccount = remember(accounts, accountHint) {
+        accounts.find { it.name == accountHint }
+    }
     var note by remember { mutableStateOf("") }
     var isBillable by remember { mutableStateOf(true) }
     var amountError by remember { mutableStateOf(false) }
@@ -180,11 +184,16 @@ fun AddTransactionDialog(
                         color = MaterialTheme.colorScheme.outline,
                         letterSpacing = 1.sp
                     )
-                    Text(
-                        text = accountHint.ifBlank { "Unspecified Account" },
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (selectedAccount?.icon != null) {
+                            Text(selectedAccount.icon, style = MaterialTheme.typography.titleSmall)
+                        }
+                        Text(
+                            text = accountHint.ifBlank { "Unspecified Account" },
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     Spacer(Modifier.height(16.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -276,6 +285,7 @@ fun AddTransactionDialog(
                             icon = Icons.Rounded.CreditCard,
                             label = "Account",
                             value = accountHint.ifBlank { "Select Account" },
+                            emoji = selectedAccount?.icon,
                             onClick = { showAccountPicker = true }
                         )
                     }
@@ -415,6 +425,7 @@ fun AddTransactionDialog(
             val datePickerState = rememberDatePickerState(initialSelectedDateMillis = selectedDateMillis)
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
+                colors = DatePickerDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
                 confirmButton = {
                     TextButton(onClick = {
                         datePickerState.selectedDateMillis?.let { picked ->
@@ -430,15 +441,28 @@ fun AddTransactionDialog(
                 },
                 dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
             ) {
-                DatePicker(state = datePickerState)
+                DatePicker(
+                    state = datePickerState,
+                    colors = DatePickerDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        selectedDayContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedYearContainerColor = MaterialTheme.colorScheme.primary,
+                        todayContentColor = MaterialTheme.colorScheme.primary,
+                        todayDateBorderColor = MaterialTheme.colorScheme.primary
+                    )
+                )
             }
         }
 
         if (showTimePicker) {
             val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
-            val timePickerState = rememberTimePickerState(initialHour = cal.get(Calendar.HOUR_OF_DAY), initialMinute = cal.get(Calendar.MINUTE))
+            val timePickerState = rememberTimePickerState(
+                initialHour = cal.get(Calendar.HOUR_OF_DAY),
+                initialMinute = cal.get(Calendar.MINUTE)
+            )
             AlertDialog(
                 onDismissRequest = { showTimePicker = false },
+                containerColor = MaterialTheme.colorScheme.surface,
                 confirmButton = {
                     TextButton(onClick = {
                         val c = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
@@ -449,7 +473,18 @@ fun AddTransactionDialog(
                     }) { Text("OK") }
                 },
                 dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("Cancel") } },
-                text = { TimePicker(state = timePickerState) }
+                text = {
+                    TimePicker(
+                        state = timePickerState,
+                        colors = TimePickerDefaults.colors(
+                            selectorColor = MaterialTheme.colorScheme.primary,
+                            periodSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            periodSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            timeSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    )
+                }
             )
         }
 

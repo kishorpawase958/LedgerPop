@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import java.util.Locale
 
 data class HomeInsight(val icon: String, val title: String, val message: String)
 
@@ -41,6 +40,7 @@ data class HomeUiState(
     val insights: List<HomeInsight> = emptyList(),
     val monthlyBudget: Double = 0.0,
     val userName: String = "User",
+    val isAggregated: Boolean = false,
     val isLoading: Boolean = true
 )
 
@@ -80,6 +80,7 @@ class HomeViewModel(
         return carryOverBudget.toDouble()
     }
 
+    private val _isAggregated = MutableStateFlow(false)
     private val _uiState = MutableStateFlow(HomeUiState(
         monthlyBudget = run {
             val cal = Calendar.getInstance()
@@ -190,6 +191,7 @@ class HomeViewModel(
                         lastMonthIncome = lastMonthIncome,
                         insights = insights,
                         monthlyBudget = getCurrentMonthBudget(thisYear, thisMonth),
+                        isAggregated = _isAggregated.value,
                         isLoading = false
                     )
                 }
@@ -226,6 +228,11 @@ class HomeViewModel(
         refreshData()
     }
 
+    fun toggleAggregation() {
+        _isAggregated.value = !_isAggregated.value
+        _uiState.update { it.copy(isAggregated = _isAggregated.value) }
+    }
+
     private fun buildInsights(
         income: Double,
         thisMonthExpense: Double,
@@ -256,6 +263,18 @@ class HomeViewModel(
                     )
                 )
             }
+        }
+
+        if (lastMonthExpense > 0) {
+            val diff = ((thisMonthExpense - lastMonthExpense) / lastMonthExpense * 100).toInt()
+            val isUp = diff > 0
+            list.add(
+                HomeInsight(
+                    if (isUp) "🚨" else "🎉",
+                    "SPENDING TREND",
+                    "Spending is ${if (isUp) "up" else "down"} by ${Math.abs(diff)}% vs last month"
+                )
+            )
         }
 
         return list

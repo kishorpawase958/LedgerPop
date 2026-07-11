@@ -116,6 +116,10 @@ fun TransactionDetailScreen(
     var merchant by remember(txn) { mutableStateOf(txn.merchant) }
     var category by remember(txn) { mutableStateOf(txn.category) }
     var account by remember(txn) { mutableStateOf(txn.accountHint) }
+
+    val selectedAccount = remember(accounts, account) {
+        accounts.find { it.name == account }
+    }
     var note by remember(txn) { mutableStateOf(txn.note) }
     var isBillable by remember(txn) { mutableStateOf(txn.isBillable) }
     var selectedDateMillis by remember(txn) { mutableLongStateOf(txn.transactionTime) }
@@ -234,11 +238,16 @@ fun TransactionDetailScreen(
                     color = MaterialTheme.colorScheme.outline,
                     letterSpacing = 1.sp
                 )
-                Text(
-                    text = account.ifBlank { "Unspecified Account" },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (selectedAccount?.icon != null) {
+                        Text(selectedAccount.icon, style = MaterialTheme.typography.titleSmall)
+                    }
+                    Text(
+                        text = account.ifBlank { "Unspecified Account" },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
                 
                 Spacer(Modifier.height(16.dp))
                 
@@ -351,6 +360,7 @@ fun TransactionDetailScreen(
                         icon = Icons.Rounded.AccountBalanceWallet,
                         label = "Account",
                         value = if (account.isBlank()) "Select Account" else account,
+                        emoji = selectedAccount?.icon,
                         onClick = { showAccountPicker = true }
                     )
                 }
@@ -575,6 +585,7 @@ fun TransactionDetailScreen(
         )
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             confirmButton = {
                 TextButton(onClick = {
                     val c = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }

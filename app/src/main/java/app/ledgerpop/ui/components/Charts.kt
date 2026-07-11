@@ -23,11 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.theme.MidnightPrimary
+import app.ledgerpop.utils.AmountUtils
 
 @Composable
 fun ScrollableBarChart(
     summaries: List<TrendSummary>,
     selectedMonth: String? = null,
+    isAggregated: Boolean = true,
     onBarClick: (String) -> Unit
 ) {
     val density = LocalDensity.current
@@ -61,11 +63,46 @@ fun ScrollableBarChart(
             }
         }
         
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 24.dp)
-        ) {
+        Column(modifier = Modifier.padding(top = 20.dp)) {
+            // Legend and Selected Info
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ChartLegendItem(label = "Income", color = creditColor, isLine = true)
+                    ChartLegendItem(label = "Expense", color = debitColor, isLine = false)
+                }
+
+                if (selectedMonth != null) {
+                    val summary = summaries.find { it.label == selectedMonth }
+                    if (summary != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = if (isAggregated) AmountUtils.formatCompact(summary.income) else AmountUtils.formatWithCurrency(summary.income),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = creditColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isAggregated) AmountUtils.formatCompact(summary.expense) else AmountUtils.formatWithCurrency(summary.expense),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = debitColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp, bottom = 24.dp)
+            ) {
             val viewportWidth = with(density) { maxWidth.toPx() }
             val itemWidthPx = with(density) { itemWidth.toPx() }
             val spacingPx = with(density) { spacing.toPx() }
@@ -200,5 +237,37 @@ fun ScrollableBarChart(
                 }
             }
         }
+    }
+}
+}
+
+@Composable
+private fun ChartLegendItem(label: String, color: Color, isLine: Boolean) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (isLine) {
+            Canvas(modifier = Modifier.size(width = 12.dp, height = 4.dp)) {
+                drawLine(
+                    color = color,
+                    start = Offset(0f, size.height / 2),
+                    end = Offset(size.width, size.height / 2),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(color, RoundedCornerShape(2.dp))
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

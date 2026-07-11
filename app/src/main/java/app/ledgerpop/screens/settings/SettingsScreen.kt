@@ -206,7 +206,7 @@ fun SettingsScreen(
             onSelectFolder = { folderPickerLauncher.launch(null) }
         )
 
-        AboutSection(uiState.appLogo)
+        AboutSection()
         
         Spacer(Modifier.height(100.dp))
     }
@@ -522,7 +522,7 @@ private fun ManagementSection(
 }
 
 @Composable
-private fun AboutSection(currentLogo: AppLogo) {
+private fun AboutSection() {
     val context = LocalContext.current
     val versionName = remember(context) {
         try {
@@ -532,36 +532,12 @@ private fun AboutSection(currentLogo: AppLogo) {
         }
     }
 
-    val logoRes = when (currentLogo) {
-        AppLogo.LIGHT -> R.mipmap.ic_launcher_light
-        AppLogo.DARK -> R.mipmap.ic_launcher_dark
-        AppLogo.NAVY -> R.mipmap.ic_launcher_navy
-        else -> R.mipmap.ic_launcher
-    }
-
     SectionCard(title = "About") {
-        val painter = rememberLauncherPainter(logoRes)
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // App Icon with a subtle container
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
-                shadowElevation = 2.dp
-            ) {
-                androidx.compose.foundation.Image(
-                    painter = painter,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .size(56.dp)
-                )
-            }
-
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     "LedgerPop",

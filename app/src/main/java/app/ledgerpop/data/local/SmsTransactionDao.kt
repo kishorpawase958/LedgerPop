@@ -78,13 +78,13 @@ interface SmsTransactionDao {
     @Query("UPDATE sms_transactions SET category = :targetName WHERE category = :sourceName")
     suspend fun updateCategoryName(sourceName: String, targetName: String)
 
-    @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId")
+    @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId ORDER BY transactionTime DESC")
     fun getLinkedCredits(debitId: Int): Flow<List<SmsTransactionEntity>>
 
-    @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId")
+    @Query("SELECT * FROM sms_transactions WHERE linkedTransactionId = :debitId ORDER BY transactionTime DESC")
     suspend fun getLinkedCreditsSync(debitId: Int): List<SmsTransactionEntity>
 
-    @Query("SELECT * FROM sms_transactions WHERE type = 'CREDIT' AND linkedTransactionId IS NULL AND transactionTime >= :minTime")
+        @Query("SELECT * FROM sms_transactions WHERE type = 'CREDIT' AND linkedTransactionId IS NULL AND transactionTime >= :minTime ORDER BY transactionTime DESC")
     fun getAvailableCredits(minTime: Long): Flow<List<SmsTransactionEntity>>
 
     @Query("UPDATE sms_transactions SET linkedTransactionId = :debitId WHERE id = :creditId")

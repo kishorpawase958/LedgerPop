@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,7 +24,7 @@ import androidx.compose.ui.window.PopupProperties
 fun FloatingFilterPopup(
     title: String,
     options: List<String>,
-    selected: String,
+    selected: Set<String>,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
     yOffset: Int = -100, // Offset in pixels from BottomEnd
@@ -71,21 +73,38 @@ fun FloatingFilterPopup(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+                        if (selected.size > 1 || (selected.size == 1 && !selected.contains("All"))) {
+                            TextButton(
+                                onClick = { 
+                                    onSelect("All")
+                                    onDismiss()
+                                },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("Reset", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
                     
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(options) { option ->
-                            val isSelected = option == selected
+                            val isSelected = selected.contains(option)
                             Surface(
                                 onClick = { 
                                     onSelect(option)
-                                    onDismiss()
+                                    if (option == "All") onDismiss()
                                 },
                                 shape = RoundedCornerShape(16.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -105,8 +124,17 @@ fun FloatingFilterPopup(
                                     Text(
                                         text = option,
                                         style = MaterialTheme.typography.bodyLarge,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    if (isSelected && option != "All") {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

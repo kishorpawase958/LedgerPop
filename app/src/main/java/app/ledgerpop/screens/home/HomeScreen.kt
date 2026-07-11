@@ -5,58 +5,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.TrendingDown
-import androidx.compose.material.icons.automirrored.rounded.TrendingUp
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Inbox
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -82,11 +40,10 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionDialog
 import app.ledgerpop.screens.transactions.TransactionDetailScreen
 import app.ledgerpop.ui.components.BulkUpdateDialog
+import app.ledgerpop.ui.components.SlidingToggle
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.ui.viewmodel.CategoryAggregate
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import app.ledgerpop.ui.viewmodel.IncomeBenchmark
 import app.ledgerpop.ui.viewmodel.HomeViewModel
 import app.ledgerpop.utils.AmountUtils
@@ -136,9 +93,13 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 150.dp)
         ) {
-            // ── Header
             item {
-                HomeHeader(uiState.userName)
+                HomeHeader(
+                    userName = uiState.userName,
+                    isAggregated = uiState.isAggregated,
+                    accentColor = accentColor,
+                    onToggleAggregation = { viewModel.toggleAggregation() }
+                )
             }
 
             // ── Balance Card
@@ -160,18 +121,11 @@ fun HomeScreen(
                     lastMonthIncome = uiState.lastMonthIncome,
                     incomeBenchmark = uiState.incomeBenchmark,
                     monthlyBudget = uiState.monthlyBudget,
+                    isAggregated = uiState.isAggregated,
                     accentColor = accentColor,
                     onUpdateBudget = { viewModel.updateBudget(it) },
                     onUpdateBenchmark = { viewModel.updateIncomeBenchmark(it) }
                 )
-            }
-            // ── Comparison
-            item {
-                MonthCompareCard(
-                    thisMonth = uiState.thisMonthExpense,
-                    lastMonth = uiState.lastMonthExpense
-                )
-                Spacer(Modifier.height(24.dp))
             }
             // ── Insights Row (Horizontal)
             if (uiState.insights.isNotEmpty()) {
@@ -204,6 +158,7 @@ fun HomeScreen(
                             CategoryCompactCard(
                                 aggregate = aggregate,
                                 customCategories = customCategories,
+                                isAggregated = uiState.isAggregated,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -228,6 +183,7 @@ fun HomeScreen(
                     HomeTransactionRow(
                         txn = txn,
                         customCategories = customCategories,
+                        isAggregated = uiState.isAggregated,
                         onClick = { selectedTxn = txn },
                         onCategoryClick = { quickCategoryTxn = txn }
                     )
@@ -320,7 +276,12 @@ fun HomeScreen(
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 @Composable
-private fun HomeHeader(userName: String) {
+private fun HomeHeader(
+    userName: String,
+    isAggregated: Boolean,
+    accentColor: Color,
+    onToggleAggregation: () -> Unit
+) {
     val currentMonthYear = remember {
         SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(Date())
     }
@@ -344,6 +305,14 @@ private fun HomeHeader(userName: String) {
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
+
+        SlidingToggle(
+            isSelected = isAggregated,
+            onToggle = { onToggleAggregation() },
+            leftLabel = "Full",
+            rightLabel = "Short",
+            selectedColor = accentColor
+        )
     }
 }
 
@@ -423,6 +392,7 @@ private fun InsightCard(emoji: String, title: String, message: String) {
 private fun CategoryCompactCard(
     aggregate: CategoryAggregate,
     customCategories: List<CustomCategoryEntity>,
+    isAggregated: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -447,7 +417,7 @@ private fun CategoryCompactCard(
                     fontSize = 50.sp,
                     modifier = Modifier
                         .padding(top = 12.dp)
-                        .alpha(0.5f)
+                        .alpha(1f)
                 )
             }
 
@@ -469,7 +439,7 @@ private fun CategoryCompactCard(
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 Text(
-                    text = "₹${formatAmount(aggregate.amount)}",
+                    text = if (isAggregated) AmountUtils.formatCompact(aggregate.amount) else "₹${formatAmount(aggregate.amount)}",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -487,6 +457,7 @@ private fun BalanceRingCard(
     lastMonthIncome: Double,
     incomeBenchmark: IncomeBenchmark,
     monthlyBudget: Double,
+    isAggregated: Boolean = false,
     accentColor: Color,
     onUpdateBudget: (Double) -> Unit,
     onUpdateBenchmark: (IncomeBenchmark) -> Unit
@@ -632,7 +603,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = AmountUtils.formatAmount(totalBalance),
+                            text = if (isAggregated) AmountUtils.formatCompact(totalBalance) else AmountUtils.formatWithCurrency(totalBalance),
                             style = MaterialTheme.typography.headlineSmall,
                             color = if (totalBalance < 0) redColor else MaterialTheme.colorScheme.onSurface
                         )
@@ -677,7 +648,7 @@ private fun BalanceRingCard(
                             }
                         }
                         Text(
-                            AmountUtils.formatWithCurrency(if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) lastMonthIncome else totalIncome),
+                            if (isAggregated) AmountUtils.formatCompact(if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) lastMonthIncome else totalIncome) else AmountUtils.formatWithCurrency(if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) lastMonthIncome else totalIncome),
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color(0xFF00B894),
                             textAlign = androidx.compose.ui.text.style.TextAlign.End
@@ -691,7 +662,7 @@ private fun BalanceRingCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            AmountUtils.formatWithCurrency(totalExpense),
+                            if (isAggregated) AmountUtils.formatCompact(totalExpense) else AmountUtils.formatWithCurrency(totalExpense),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -705,7 +676,7 @@ private fun BalanceRingCard(
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (monthlyBudget > 0) AmountUtils.formatWithCurrency(monthlyBudget) else "Not Set",
+                                if (monthlyBudget > 0) (if (isAggregated) AmountUtils.formatCompact(monthlyBudget) else AmountUtils.formatWithCurrency(monthlyBudget)) else "Not Set",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -760,75 +731,10 @@ private fun BalanceRingCard(
 }
 
 @Composable
-private fun MonthCompareCard(thisMonth: Double, lastMonth: Double) {
-    val diff = if (lastMonth > 0)
-        ((thisMonth - lastMonth) / lastMonth * 100).toInt()
-    else 0
-    val isUp = diff > 0
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "VS LAST MONTH",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isUp)
-                            Icons.AutoMirrored.Rounded.TrendingUp
-                        else
-                            Icons.AutoMirrored.Rounded.TrendingDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (isUp) Color(0xFFD63031) else Color(0xFF00B894)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "${if (isUp) "+" else ""}$diff%",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = if (isUp) Color(0xFFD63031) else Color(0xFF00B894)
-                    )
-                }
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    AmountUtils.formatWithCurrency(lastMonth),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "PREVIOUS",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun HomeTransactionRow(
     txn: SmsTransactionEntity,
     customCategories: List<CustomCategoryEntity> = emptyList(),
+    isAggregated: Boolean = false,
     onClick: () -> Unit,
     onCategoryClick: () -> Unit
 ) {
@@ -907,7 +813,7 @@ private fun HomeTransactionRow(
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = AmountUtils.formatWithCurrency(txn.amount),
+                text = if (isAggregated) AmountUtils.formatCompact(txn.amount) else AmountUtils.formatWithCurrency(txn.amount),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Normal,
                 color = if (isBillable) amountColor
@@ -921,7 +827,7 @@ private fun HomeTransactionRow(
                 )
             } else if (txn.originalAmount != null) {
                 Text(
-                    text = AmountUtils.formatWithCurrency(txn.originalAmount),
+                    text = if (isAggregated) AmountUtils.formatCompact(txn.originalAmount) else AmountUtils.formatWithCurrency(txn.originalAmount),
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),
@@ -1003,10 +909,10 @@ fun QuickCategoryUpdateDialog(
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
     val scope = rememberCoroutineScope()
-    
+
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
     var editingEmojiFor by remember { mutableStateOf<String?>(null) }
-    
+
     var showBulkUpdateDialog by remember { mutableStateOf(false) }
     var similarTxnsToUpdate by remember { mutableStateOf<List<SmsTransactionEntity>>(emptyList()) }
     var pendingSavedTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
@@ -1140,7 +1046,7 @@ fun QuickCategoryUpdateDialog(
             onApply = { selectedIds, updateMerchant, updateCategory, updateBillable ->
                 scope.launch {
                     when {
-                        updateMerchant && updateCategory && updateBillable -> 
+                        updateMerchant && updateCategory && updateBillable ->
                             db.smsTransactionDao().updateBulk(selectedIds, txn.merchant, selectedCategory, txn.isBillable)
                         updateMerchant && updateCategory -> db.smsTransactionDao().updateMerchantAndCategoryForIds(selectedIds, txn.merchant, selectedCategory)
                         updateMerchant && updateBillable -> {

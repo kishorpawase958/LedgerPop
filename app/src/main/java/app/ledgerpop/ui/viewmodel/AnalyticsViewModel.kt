@@ -33,9 +33,10 @@ private data class AnalyticsFilters(
     val end: Long?,
     val groupBy: GroupingType,
     val viewType: AnalyticsViewType,
-    val category: String,
-    val account: String,
-    val month: String?
+    val categories: Set<String>,
+    val accounts: Set<String>,
+    val month: String?,
+    val isAggregated: Boolean
 )
 
 class AnalyticsViewModel(
@@ -46,9 +47,10 @@ class AnalyticsViewModel(
     private val _endDateMillis = MutableStateFlow<Long?>(null)
     private val _groupBy = MutableStateFlow(GroupingType.MONTHLY)
     private val _viewType = MutableStateFlow(AnalyticsViewType.SPENDS)
-    private val _selectedCategory = MutableStateFlow("All")
-    private val _selectedAccount = MutableStateFlow("All")
+    private val _selectedCategories = MutableStateFlow(setOf("All"))
+    private val _selectedAccounts = MutableStateFlow(setOf("All"))
     private val _selectedMonth = MutableStateFlow<String?>(null)
+    private val _isAggregated = MutableStateFlow(false)
 
     private val formats = mapOf(
         GroupingType.DAILY to SimpleDateFormat("dd MMM", Locale.getDefault()),
@@ -57,13 +59,17 @@ class AnalyticsViewModel(
     )
 
     private val filters = combine(
-        _startDateMillis,
-        _endDateMillis,
-        _groupBy,
+        combine(_startDateMillis, _endDateMillis, _groupBy) { s, e, g -> Triple(s, e, g) },
         _viewType,
-        combine(_selectedCategory, _selectedAccount, _selectedMonth) { c, a, m -> Triple(c, a, m) }
-    ) { start, end, groupBy, viewType, triple ->
-        AnalyticsFilters(start, end, groupBy, viewType, triple.first, triple.second, triple.third)
+        _isAggregated,
+        combine(_selectedCategories, _selectedAccounts, _selectedMonth) { c, a, m -> Triple(c, a, m) }
+    ) { time, viewType, isAggregated, category ->
+        AnalyticsFilters(
+            time.first, time.second, time.third,
+            viewType,
+            category.first, category.second, category.third,
+            isAggregated
+        )
     }
 
     val uiState: StateFlow<AnalyticsUiState> = combine(
@@ -79,14 +85,14 @@ class AnalyticsViewModel(
         var baseFiltered = billableTxns
         if (f.start != null) baseFiltered = baseFiltered.filter { it.transactionTime >= f.start }
         if (f.end != null) baseFiltered = baseFiltered.filter { it.transactionTime <= (f.end + 86400000L - 1) }
-        if (f.category != "All") baseFiltered = baseFiltered.filter { CategoryEngine.normalize(it.category) == f.category }
-        if (f.account != "All") baseFiltered = baseFiltered.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
+        if (!f.categories.contains("All")) baseFiltered = baseFiltered.filter { f.categories.contains(CategoryEngine.normalize(it.category)) }
+        if (!f.accounts.contains("All")) baseFiltered = baseFiltered.filter { f.accounts.contains(it.accountHint.ifBlank { "Unknown" }) }
 
         val trendFormat = formats[f.groupBy]!!
         // Trend chart shows all historical data for the selected category/account, ignoring date range filters
         val trendBase = billableTxns.filter { txn ->
-            val matchesCategory = f.category == "All" || CategoryEngine.normalize(txn.category) == f.category
-            val matchesAccount = f.account == "All" || txn.accountHint.ifBlank { "Unknown" } == f.account
+            val matchesCategory = f.categories.contains("All") || f.categories.contains(CategoryEngine.normalize(txn.category))
+            val matchesAccount = f.accounts.contains("All") || f.accounts.contains(txn.accountHint.ifBlank { "Unknown" })
             matchesCategory && matchesAccount
         }
         val trendSummaries = trendBase
@@ -115,12 +121,19 @@ class AnalyticsViewModel(
 
         val income = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount }
         val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
+
+        val effectiveViewType = when {
+            expense > 0 && income == 0.0 -> AnalyticsViewType.SPENDS
+            income > 0 && expense == 0.0 -> AnalyticsViewType.INCOME
+            else -> f.viewType
+        }
+
         val debits = filteredTxns.filter { it.type == "DEBIT" }
         val credits = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }
         val avgDebit = if (debits.isNotEmpty()) expense / debits.size else 0.0
         val avgCredit = if (credits.isNotEmpty()) income / credits.size else 0.0
 
-        val categoryBreakdown = if (f.viewType == AnalyticsViewType.SPENDS) {
+        val categoryBreakdown = if (effectiveViewType == AnalyticsViewType.SPENDS) {
             debits
                 .groupBy { CategoryEngine.normalize(it.category) }
                 .map { (cat, txns) ->
@@ -160,10 +173,11 @@ class AnalyticsViewModel(
             startDateMillis = f.start,
             endDateMillis = f.end,
             groupBy = f.groupBy,
-            viewType = f.viewType,
-            selectedCategory = f.category,
-            selectedAccount = f.account,
+            viewType = effectiveViewType,
+            selectedCategories = f.categories,
+            selectedAccounts = f.accounts,
             selectedMonth = f.month,
+            isAggregated = f.isAggregated,
             availableCategories = cats,
             availableAccounts = accs,
             filteredTransactions = filteredTxns.sortedByDescending { it.transactionTime },
@@ -199,7 +213,7 @@ class AnalyticsViewModel(
         var baseFiltered = allTxns
         if (f.start != null) baseFiltered = baseFiltered.filter { it.transactionTime >= f.start }
         if (f.end != null) baseFiltered = baseFiltered.filter { it.transactionTime <= (f.end + 86400000L - 1) }
-        if (f.account != "All") baseFiltered = baseFiltered.filter { it.accountHint.ifBlank { "Unknown" } == f.account }
+        if (!f.accounts.contains("All")) baseFiltered = baseFiltered.filter { f.accounts.contains(it.accountHint.ifBlank { "Unknown" }) }
 
         val monthFiltered = if (f.month == null) {
             baseFiltered
@@ -218,15 +232,23 @@ class AnalyticsViewModel(
                 monthFiltered.filter { it.type == "DEBIT" }
             }
             is DrillDownType.Category -> {
+                val income = monthFiltered.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount }
+                val expense = monthFiltered.filter { it.type == "DEBIT" }.sumOf { it.amount }
+                val effectiveViewType = when {
+                    expense > 0 && income == 0.0 -> AnalyticsViewType.SPENDS
+                    income > 0 && expense == 0.0 -> AnalyticsViewType.INCOME
+                    else -> f.viewType
+                }
+
                 monthFiltered.filter {
-                    val typeMatches = if (f.viewType == AnalyticsViewType.SPENDS) it.type == "DEBIT" else it.type == "CREDIT"
+                    val typeMatches = if (effectiveViewType == AnalyticsViewType.SPENDS) it.type == "DEBIT" else it.type == "CREDIT"
                     typeMatches && CategoryEngine.normalize(it.category) == drillDown.categoryName
                 }
             }
             is DrillDownType.Trend -> {
                 allTxns.filter {
-                    val matchesCategory = f.category == "All" || CategoryEngine.normalize(it.category) == f.category
-                    val matchesAccount = f.account == "All" || it.accountHint.ifBlank { "Unknown" } == f.account
+                    val matchesCategory = f.categories.contains("All") || f.categories.contains(CategoryEngine.normalize(it.category))
+                    val matchesAccount = f.accounts.contains("All") || f.accounts.contains(it.accountHint.ifBlank { "Unknown" })
                     if (matchesCategory && matchesAccount) {
                         val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
                         trendFormat.format(cal.time) == drillDown.label
@@ -243,22 +265,46 @@ class AnalyticsViewModel(
 
     fun setViewType(type: AnalyticsViewType) { _viewType.value = type }
     fun setAccountFilter(account: String) {
-        _selectedAccount.value = if (_selectedAccount.value == account) "All" else account
+        _selectedAccounts.update { current ->
+            if (account == "All") {
+                setOf("All")
+            } else {
+                val next = current.toMutableSet().apply {
+                    remove("All")
+                    if (contains(account)) remove(account) else add(account)
+                }
+                if (next.isEmpty()) setOf("All") else next
+            }
+        }
     }
 
     fun setCategoryFilter(category: String) {
-        _selectedCategory.value = if (_selectedCategory.value == category) "All" else category
+        _selectedCategories.update { current ->
+            if (category == "All") {
+                setOf("All")
+            } else {
+                val next = current.toMutableSet().apply {
+                    remove("All")
+                    if (contains(category)) remove(category) else add(category)
+                }
+                if (next.isEmpty()) setOf("All") else next
+            }
+        }
     }
 
     fun onMonthToggle(month: String) {
         _selectedMonth.value = if (_selectedMonth.value == month) null else month
     }
 
+    fun toggleAggregation() {
+        _isAggregated.value = !_isAggregated.value
+    }
+
     fun clearFilters() {
         _startDateMillis.value = null
         _endDateMillis.value = null
-        _selectedCategory.value = "All"
-        _selectedAccount.value = "All"
+        _selectedCategories.value = setOf("All")
+        _selectedAccounts.value = setOf("All")
         _selectedMonth.value = null
         _groupBy.value = GroupingType.MONTHLY
         _viewType.value = AnalyticsViewType.SPENDS
@@ -300,11 +346,11 @@ class AnalyticsViewModel(
                 state.endDateMillis?.let { end ->
                     exportList = exportList.filter { it.transactionTime <= (end + 86400000L - 1) }
                 }
-                if (state.selectedAccount != "All") {
-                    exportList = exportList.filter { it.accountHint.ifBlank { "Unknown" } == state.selectedAccount }
+                if (!state.selectedAccounts.contains("All")) {
+                    exportList = exportList.filter { state.selectedAccounts.contains(it.accountHint.ifBlank { "Unknown" }) }
                 }
-                if (state.selectedCategory != "All") {
-                    exportList = exportList.filter { CategoryEngine.normalize(it.category) == state.selectedCategory }
+                if (!state.selectedCategories.contains("All")) {
+                    exportList = exportList.filter { state.selectedCategories.contains(CategoryEngine.normalize(it.category)) }
                 }
                 if (state.selectedMonth != null) {
                     val trendFormat = formats[state.groupBy]!!

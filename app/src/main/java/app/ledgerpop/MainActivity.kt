@@ -42,7 +42,6 @@ import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.compose.ui.platform.LocalContext
 import app.ledgerpop.data.local.LedgerPopDatabase
-import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.screens.analytics.AnalyticsScreen
 import app.ledgerpop.screens.home.HomeScreen
 import app.ledgerpop.screens.onboarding.OnboardingScreen
