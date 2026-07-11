@@ -42,6 +42,7 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.ui.state.AppTheme
 import app.ledgerpop.ui.state.AppLogo
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
+import androidx.core.graphics.createBitmap
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -938,7 +939,7 @@ private fun rememberLauncherPainter(logoRes: Int): androidx.compose.ui.graphics.
         val drawable = ContextCompat.getDrawable(context, logoRes)!!
         val width = drawable.intrinsicWidth.coerceAtLeast(1)
         val height = drawable.intrinsicHeight.coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
         drawable.setBounds(0, 0, width, height)
         drawable.draw(canvas)

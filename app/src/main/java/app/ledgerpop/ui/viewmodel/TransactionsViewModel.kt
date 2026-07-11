@@ -12,7 +12,6 @@ import app.ledgerpop.ui.state.TransactionSortOrder
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
-import app.ledgerpop.data.category.CategoryEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview

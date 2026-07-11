@@ -489,7 +489,7 @@ private fun BalanceRingCard(
         tonalElevation = 2.dp,
         border = BorderStroke(
             1.dp,
-            accentColor.copy(alpha = 0.5f)
+            accentColor.copy(alpha = 1f)
         )
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
@@ -599,7 +599,7 @@ private fun BalanceRingCard(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = if (totalBalance >= 0) "Available" else "Over",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
@@ -622,7 +622,7 @@ private fun BalanceRingCard(
                         Box(contentAlignment = Alignment.CenterEnd) {
                             Text(
                                 text = if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) "Income Last Month" else "Income this Month",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
                                 modifier = Modifier.clickable { showBenchmarkMenu = true }
@@ -658,7 +658,7 @@ private fun BalanceRingCard(
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             "Spent this Month",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
@@ -671,7 +671,7 @@ private fun BalanceRingCard(
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             "Monthly Budget",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {

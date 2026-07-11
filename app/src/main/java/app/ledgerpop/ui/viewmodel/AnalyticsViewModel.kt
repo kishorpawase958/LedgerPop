@@ -299,16 +299,7 @@ class AnalyticsViewModel(
     fun toggleAggregation() {
         _isAggregated.value = !_isAggregated.value
     }
-
-    fun clearFilters() {
-        _startDateMillis.value = null
-        _endDateMillis.value = null
-        _selectedCategories.value = setOf("All")
-        _selectedAccounts.value = setOf("All")
-        _selectedMonth.value = null
-        _groupBy.value = GroupingType.MONTHLY
-        _viewType.value = AnalyticsViewType.SPENDS
-    }
+    
 
     fun openDrillDown(type: DrillDownType) {
         _currentDrillDown.value = type

@@ -165,13 +165,21 @@ fun AddTransactionDialog(
                         selected = isExpense,
                         onClick = { isExpense = true },
                         shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                        label = { Text("Expense") }
+                        label = { Text("Expense") },
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.primary,
+                            activeContentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     )
                     SegmentedButton(
                         selected = !isExpense,
                         onClick = { isExpense = false },
                         shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                        label = { Text("Income") }
+                        label = { Text("Income") },
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Color(0xFF00B894),
+                            activeContentColor = Color.White
+                        )
                     )
                 }
 
