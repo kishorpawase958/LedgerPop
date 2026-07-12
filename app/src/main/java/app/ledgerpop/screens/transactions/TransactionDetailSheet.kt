@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,15 +96,11 @@ fun TransactionDetailScreen(
     // Expense/Income toggle removed; type is derived from the transaction
     val isExpense = remember(txn) { txn.type == "DEBIT" }
 
-    val categories = remember(isExpense, existingTransactions, customCategories) {
+    val categories = remember(isExpense, customCategories) {
         val type = if (isExpense) "DEBIT" else "CREDIT"
         val engineCats = if (isExpense) CategoryEngine.debitCategories() else CategoryEngine.creditCategories()
         val customOfType = customCategories.filter { it.type == type }.map { it.name }
-        val existingOfType = existingTransactions
-            .filter { it.type == type }
-            .map { it.category }
-            .filter { it.isNotBlank() }
-        (engineCats + customOfType + existingOfType).distinct().sorted()
+        (engineCats + customOfType).distinct().sorted()
     }
     
     val accountOptions = remember(accounts, existingTransactions) {
@@ -120,6 +115,10 @@ fun TransactionDetailScreen(
     var merchant by remember(txn) { mutableStateOf(txn.merchant) }
     var category by remember(txn) { mutableStateOf(txn.category) }
     var account by remember(txn) { mutableStateOf(txn.accountHint) }
+
+    val selectedAccount = remember(accounts, account) {
+        accounts.find { it.name == account }
+    }
     var note by remember(txn) { mutableStateOf(txn.note) }
     var isBillable by remember(txn) { mutableStateOf(txn.isBillable) }
     var selectedDateMillis by remember(txn) { mutableLongStateOf(txn.transactionTime) }
@@ -238,11 +237,16 @@ fun TransactionDetailScreen(
                     color = MaterialTheme.colorScheme.outline,
                     letterSpacing = 1.sp
                 )
-                Text(
-                    text = account.ifBlank { "Unspecified Account" },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (selectedAccount?.icon != null) {
+                        Text(selectedAccount.icon, style = MaterialTheme.typography.titleSmall)
+                    }
+                    Text(
+                        text = account.ifBlank { "Unspecified Account" },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
                 
                 Spacer(Modifier.height(16.dp))
                 
@@ -355,6 +359,7 @@ fun TransactionDetailScreen(
                         icon = Icons.Rounded.AccountBalanceWallet,
                         label = "Account",
                         value = if (account.isBlank()) "Select Account" else account,
+                        emoji = selectedAccount?.icon,
                         onClick = { showAccountPicker = true }
                     )
                 }
@@ -579,6 +584,7 @@ fun TransactionDetailScreen(
         )
         AlertDialog(
             onDismissRequest = { showTimePicker = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             confirmButton = {
                 TextButton(onClick = {
                     val c = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }

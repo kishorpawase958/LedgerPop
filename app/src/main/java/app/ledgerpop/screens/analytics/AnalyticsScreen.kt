@@ -1,10 +1,8 @@
 package app.ledgerpop.screens.analytics
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -29,8 +27,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,8 +36,7 @@ import app.ledgerpop.ui.components.ScrollableBarChart
 import app.ledgerpop.ui.components.SpeedDialFab
 import app.ledgerpop.ui.components.SpeedDialAction
 import app.ledgerpop.ui.components.FloatingFilterPopup
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
+import app.ledgerpop.ui.components.SlidingToggle
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Download
@@ -47,7 +44,6 @@ import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Close
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
-import app.ledgerpop.ui.theme.Purple500
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
@@ -128,47 +124,63 @@ fun AnalyticsScreen() {
     }
 
     Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        LazyColumn(
-            state = listState,
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-            contentPadding = PaddingValues(bottom = 220.dp)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             // ── Header ───────────────────────────────────────────────────────
-            item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Analytics",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                // Small filter status row
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 20.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Analytics",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-
-                    // Small filter status row
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (uiState.selectedAccount != "All") {
-                            FilterStatusChip(uiState.selectedAccount) { viewModel.setAccountFilter("All") }
-                        }
-                        if (uiState.selectedCategory != "All") {
-                            FilterStatusChip(uiState.selectedCategory) { viewModel.setCategoryFilter("All") }
-                        }
-                        if (uiState.startDateMillis != null) {
-                            FilterStatusChip("Date") { viewModel.setDateRange(null, null) }
-                        }
+                    if (!uiState.selectedAccounts.contains("All")) {
+                        val text = if (uiState.selectedAccounts.size == 1) uiState.selectedAccounts.first() 
+                                   else "Account (${uiState.selectedAccounts.size})"
+                        FilterStatusChip(text) { viewModel.setAccountFilter("All") }
+                    }
+                    if (!uiState.selectedCategories.contains("All")) {
+                        val text = if (uiState.selectedCategories.size == 1) uiState.selectedCategories.first() 
+                                   else "Category (${uiState.selectedCategories.size})"
+                        FilterStatusChip(text) { viewModel.setCategoryFilter("All") }
+                    }
+                    if (uiState.startDateMillis != null) {
+                        FilterStatusChip("Date") { viewModel.setDateRange(null, null) }
                     }
                 }
+
+                SlidingToggle(
+                    isSelected = uiState.isAggregated,
+                    onToggle = { viewModel.toggleAggregation() },
+                    leftLabel = "Full",
+                    rightLabel = "Short",
+                    selectedColor = accentColor
+                )
             }
 
-            // ── KPIs (Clickable) ──────────────────────────────────────────────
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 220.dp)
+            ) {
+                // ── KPIs (Clickable) ──────────────────────────────────────────────
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -176,15 +188,23 @@ fun AnalyticsScreen() {
                 ) {
                     KpiCard(
                         label = "Income",
-                        value = AmountUtils.formatWithCurrency(uiState.totalIncome),
-                        color = Color(0xFF00B894),
+                        value = if (uiState.isAggregated) AmountUtils.formatCompact(uiState.totalIncome) else AmountUtils.formatWithCurrency(uiState.totalIncome),
+                        color = Color.White,
+                        containerColor = Color(0xFF00B894),
+                        labelColor = Color.White.copy(alpha = 1f),
+                        labelStyle = MaterialTheme.typography.labelLarge,
+                        valueStyle = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.openDrillDown(DrillDownType.Income) }
                     )
                     KpiCard(
                         label = "Expenses",
-                        value = AmountUtils.formatWithCurrency(uiState.totalExpense),
-                        color = accentLight,
+                        value = if (uiState.isAggregated) AmountUtils.formatCompact(uiState.totalExpense) else AmountUtils.formatWithCurrency(uiState.totalExpense),
+                        color = Color.White,
+                        containerColor = accentColor,
+                        labelColor = Color.White.copy(alpha = 1f),
+                        labelStyle = MaterialTheme.typography.labelLarge,
+                        valueStyle = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier.weight(1f),
                         onClick = { viewModel.openDrillDown(DrillDownType.Expense) }
                     )
@@ -202,9 +222,9 @@ fun AnalyticsScreen() {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    KpiCard("Net", AmountUtils.formatWithCurrency(uiState.net), netColor, Modifier.weight(1f))
-                    KpiCard("Avg Credit", AmountUtils.formatWithCurrency(uiState.avgCredit), Color(0xFF00B894), Modifier.weight(1f))
-                    KpiCard("Avg Debit", AmountUtils.formatWithCurrency(uiState.avgDebit), color = accentLight, Modifier.weight(1f))
+                    KpiCard("Net", if (uiState.isAggregated) AmountUtils.formatCompact(uiState.net) else AmountUtils.formatWithCurrency(uiState.net), netColor, Modifier.weight(1f))
+                    KpiCard("Avg Credit", if (uiState.isAggregated) AmountUtils.formatCompact(uiState.avgCredit) else AmountUtils.formatWithCurrency(uiState.avgCredit), Color(0xFF00B894), Modifier.weight(1f))
+                    KpiCard("Avg Debit", if (uiState.isAggregated) AmountUtils.formatCompact(uiState.avgDebit) else AmountUtils.formatWithCurrency(uiState.avgDebit), color = accentLight, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -220,6 +240,7 @@ fun AnalyticsScreen() {
                     ScrollableBarChart(
                         summaries = uiState.trendSummaries,
                         selectedMonth = uiState.selectedMonth,
+                        isAggregated = uiState.isAggregated,
                         onBarClick = { viewModel.onMonthToggle(it) }
                     )
                     Spacer(Modifier.height(16.dp))
@@ -227,12 +248,14 @@ fun AnalyticsScreen() {
             }
 
             // ── Category Distribution Header & Switch ───────────────────────
-            if (uiState.totalIncome > 0 || uiState.totalExpense > 0) {
+            val hasIncome = uiState.totalIncome > 0
+            val hasExpense = uiState.totalExpense > 0
+            if (hasIncome || hasExpense) {
                 item {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal =30.dp, vertical = 8.dp),
+                            .padding(horizontal = 30.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -244,68 +267,21 @@ fun AnalyticsScreen() {
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onBackground
                         )
-                        val isIncome = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME
-                        val themeColor by animateColorAsState(
-                            if (isIncome) Color(0xFF00B894) else accentColor,
-                            label = "ThemeColor"
-                        )
-                        val switchBgColor by animateColorAsState(
-                            themeColor.copy(alpha = 0.08f),
-                            label = "SwitchBg"
-                        )
-                        val thumbOffset by animateDpAsState(
-                            if (isIncome) 52.dp else 0.dp,
-                            label = "ThumbOffset"
-                        )
 
-                        Box(
-                            modifier = Modifier
-                                .width(112.dp)
-                                .height(40.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(switchBgColor)
-                                .border(1.dp, themeColor.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
-                                .clickable {
+                        if (hasIncome && hasExpense) {
+                            val isIncome = uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.INCOME
+                            SlidingToggle(
+                                isSelected = isIncome,
+                                onToggle = {
                                     viewModel.setViewType(
                                         if (isIncome) app.ledgerpop.ui.state.AnalyticsViewType.SPENDS
                                         else app.ledgerpop.ui.state.AnalyticsViewType.INCOME
                                     )
-                                }
-                                .padding(4.dp)
-                        ) {
-                            // Thumb (behind text)
-                            Box(
-                                modifier = Modifier
-                                    .offset { IntOffset(x = thumbOffset.roundToPx(), y = 0) }
-                                    .fillMaxHeight()
-                                    .width(52.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(themeColor)
+                                },
+                                leftLabel = "Spends",
+                                rightLabel = "Income",
+                                selectedColor = if (isIncome) Color(0xFF00B894) else accentColor
                             )
-
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "Spends",
-                                        color = if (!isIncome) Color.White else themeColor,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontSize = 11.sp,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "Income",
-                                        color = if (isIncome) Color.White else themeColor,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontSize = 11.sp,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                            }
                         }
                     }
                 }
@@ -318,6 +294,7 @@ fun AnalyticsScreen() {
                         summaries = uiState.categoryBreakdown,
                         customCategories = uiState.customCategories,
                         viewType = uiState.viewType,
+                        isAggregated = uiState.isAggregated,
                         onCategoryClick = { cat -> viewModel.openDrillDown(DrillDownType.Category(cat)) }
                     )
                     Spacer(Modifier.height(16.dp))
@@ -350,6 +327,7 @@ fun AnalyticsScreen() {
                         summary = summary,
                         customCategories = uiState.customCategories,
                         viewType = uiState.viewType,
+                        isAggregated = uiState.isAggregated,
                         onClick = { viewModel.openDrillDown(DrillDownType.Category(summary.category)) }
                     )
                     Spacer(Modifier.height(8.dp))
@@ -387,6 +365,7 @@ fun AnalyticsScreen() {
                 }
             }
         }
+    }
 
         // ── Scroll to Top Button ──────────────────────────────────────────────────
         AnimatedVisibility(
@@ -448,7 +427,7 @@ fun AnalyticsScreen() {
         FloatingFilterPopup(
             title = "Filter Account",
             options = uiState.availableAccounts,
-            selected = uiState.selectedAccount,
+            selected = uiState.selectedAccounts,
             onSelect = { viewModel.setAccountFilter(it) },
             onDismiss = { showAccountFilterPopup = false },
             yOffset = popupYOffset
@@ -459,7 +438,7 @@ fun AnalyticsScreen() {
         FloatingFilterPopup(
             title = "Filter Category",
             options = uiState.availableCategories,
-            selected = uiState.selectedCategory,
+            selected = uiState.selectedCategories,
             onSelect = { viewModel.setCategoryFilter(it) },
             onDismiss = { showCategoryFilterPopup = false },
             emojiProvider = { CategoryEngine.emoji(it, uiState.customCategories) },
@@ -543,6 +522,7 @@ fun AnalyticsScreen() {
                                         customCategories = uiState.customCategories,
                                         linkedAmount = linkedAmounts[txn.id] ?: 0.0,
                                         hasCreditLinks = txn.linkedTransactionId != null,
+                                        isAggregated = uiState.isAggregated,
                                         onClick = { selectedTxnState.value = txn },
                                         onCategoryClick = { quickCategoryTxnState.value = txn }
                                     )
@@ -682,6 +662,7 @@ private fun CategoryDonutChart(
     summaries: List<CategorySummary>,
     customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity>,
     viewType: app.ledgerpop.ui.state.AnalyticsViewType = app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
+    isAggregated: Boolean = false,
     onCategoryClick: (String) -> Unit
 ) {
     if (summaries.isEmpty()) return
@@ -765,7 +746,7 @@ private fun CategoryDonutChart(
                             )
                             val totalAmount = remember(summaries) { summaries.sumOf { it.amount } }
                             Text(
-                                text = AmountUtils.formatWithCurrency(totalAmount),
+                                text = if (isAggregated) AmountUtils.formatCompact(totalAmount) else AmountUtils.formatWithCurrency(totalAmount),
                                 style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -851,6 +832,10 @@ private fun KpiCard(
     value: String,
     color: Color,
     modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surface,
+    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    labelStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.labelSmall,
+    valueStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium,
     onClick: (() -> Unit)? = null
 ) {
     Card(
@@ -858,17 +843,26 @@ private fun KpiCard(
             if (onClick != null) Modifier.clickable { onClick() } else Modifier
         ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                label,
+                style = labelStyle,
+                color = labelColor,
+                textAlign = TextAlign.Center
+            )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleMedium,
+                style = valueStyle,
                 color = color,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -879,6 +873,7 @@ private fun CategoryRow(
     summary: CategorySummary,
     customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity> = emptyList(),
     viewType: app.ledgerpop.ui.state.AnalyticsViewType = app.ledgerpop.ui.state.AnalyticsViewType.SPENDS,
+    isAggregated: Boolean = false,
     onClick: () -> Unit
 ) {
     val locale = LocalConfiguration.current.locales[0]
@@ -906,7 +901,11 @@ private fun CategoryRow(
             Column(modifier = Modifier.weight(1f)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(summary.category, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    Text(AmountUtils.formatWithCurrency(summary.amount), style = MaterialTheme.typography.bodyMedium, color = amountColor)
+                    Text(
+                        text = if (isAggregated) AmountUtils.formatCompact(summary.amount) else AmountUtils.formatWithCurrency(summary.amount),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = amountColor
+                    )
                 }
                 Spacer(Modifier.height(6.dp))
                 Box(modifier = Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(3.dp))) {
@@ -925,6 +924,7 @@ private fun TransactionRowCompact(
     customCategories: List<app.ledgerpop.data.local.CustomCategoryEntity> = emptyList(),
     linkedAmount: Double = 0.0,
     hasCreditLinks: Boolean = false,
+    isAggregated: Boolean = false,
     onClick: () -> Unit,
     onCategoryClick: () -> Unit
 ) {
@@ -1013,13 +1013,14 @@ private fun TransactionRowCompact(
 
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = AmountUtils.formatWithCurrency(txn.amount),
+                text = if (isAggregated) AmountUtils.formatCompact(txn.amount) else AmountUtils.formatWithCurrency(txn.amount),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (isBillable) amountColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (txn.originalAmount != null) {
+                val originalText = if (isAggregated) AmountUtils.formatCompact(txn.originalAmount) else AmountUtils.formatWithCurrency(txn.originalAmount)
                 Text(
-                    text = AmountUtils.formatWithCurrency(txn.originalAmount),
+                    text = originalText,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     ),

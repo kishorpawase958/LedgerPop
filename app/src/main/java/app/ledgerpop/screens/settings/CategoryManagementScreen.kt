@@ -11,6 +11,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.LedgerPopDatabase
@@ -86,6 +88,7 @@ fun CategoryManagementScreen(
     val creditCategories = allCategoryInfo.filter { it.type == "CREDIT" }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var showSyncConfirm by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<CategoryDisplayInfo?>(null) }
 
     Column(
@@ -109,6 +112,9 @@ fun CategoryManagementScreen(
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
+            IconButton(onClick = { showSyncConfirm = true }) {
+                Icon(Icons.Rounded.Sync, contentDescription = "Recategorize All", tint = MaterialTheme.colorScheme.primary)
+            }
             IconButton(onClick = { showAddDialog = true }) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Category")
             }
@@ -173,6 +179,26 @@ fun CategoryManagementScreen(
             onSave = { name, emoji, type ->
                 viewModel.addCustomCategory(name, emoji, type)
                 showAddDialog = false
+            }
+        )
+    }
+
+    if (showSyncConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSyncConfirm = false },
+            title = { Text("Recategorize Transactions") },
+            text = { Text("This will re-run the category engine on all your existing transactions based on current rules. Continue?") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.recategorizeAllTransactions()
+                    Toast.makeText(context, "Recategorization started successfully", Toast.LENGTH_SHORT).show()
+                    showSyncConfirm = false
+                }) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSyncConfirm = false }) { Text("Cancel") }
             }
         )
     }

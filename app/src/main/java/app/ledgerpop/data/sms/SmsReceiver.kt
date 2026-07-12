@@ -70,5 +70,5 @@ class SmsReceiver : BroadcastReceiver() {
 }
 
 class NoOpSmsReader(context: Context) : SmsReader(context) {
-    override fun readTransactionSms(): List<SmsMessage> = emptyList()
+    override fun readTransactionSms(since: Long): List<SmsMessage> = emptyList()
 }

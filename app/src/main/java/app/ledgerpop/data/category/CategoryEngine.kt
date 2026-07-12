@@ -126,17 +126,29 @@ object CategoryEngine {
         )
     )
 
-    fun categorize(merchant: String, body: String, sender: String, customCategories: List<CustomCategory> = emptyList()): String {
+    fun categorize(
+        merchant: String,
+        body: String,
+        sender: String,
+        customCategories: List<CustomCategory> = emptyList(),
+        type: String = "DEBIT"
+    ): String {
         val searchText = "$merchant $body $sender".lowercase()
 
+        val allowedCategories = if (type == "CREDIT") {
+            creditCategories(customCategories).toSet()
+        } else {
+            debitCategories(customCategories).toSet()
+        }
+
         for (custom in customCategories) {
-            if (custom.keywords.any { searchText.contains(it.lowercase()) }) {
+            if (custom.type == type && custom.keywords.any { searchText.contains(it.lowercase()) }) {
                 return custom.name
             }
         }
 
         for ((category, keywords) in RULES) {
-            if (keywords.any { searchText.contains(it) }) {
+            if (allowedCategories.contains(category) && keywords.any { searchText.contains(it) }) {
                 return category
             }
         }

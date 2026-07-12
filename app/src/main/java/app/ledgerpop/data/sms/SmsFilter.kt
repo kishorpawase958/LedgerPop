@@ -27,12 +27,14 @@ object SmsFilter {
         "balance", "a/c", "ac no", "acct"
     )
 
+    private val PERSONAL_NUMBER_REGEX = Regex("""^\+?91?\d{10}$""")
+
     fun shouldProcess(sender: String, body: String): Boolean {
         val upperSender = sender.uppercase()
         val lowerBody = body.lowercase()
 
         // Reject personal numbers (10+ digit phone numbers)
-        if (sender.matches(Regex("""^\+?91?\d{10}$"""))) return false
+        if (sender.matches(PERSONAL_NUMBER_REGEX)) return false
 
         // Extract TRAI suffix
         val suffix = extractSuffix(upperSender)

@@ -12,7 +12,6 @@ import app.ledgerpop.ui.state.TransactionSortOrder
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
-import app.ledgerpop.data.category.CategoryEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -31,8 +30,8 @@ class TransactionsViewModel(
     val searchQuery = _query.asStateFlow()
 
     private val _selectedFilter = MutableStateFlow("All")
-    private val _selectedCategory = MutableStateFlow("All")
-    private val _selectedAccount = MutableStateFlow("All")
+    private val _selectedCategories = MutableStateFlow(setOf("All"))
+    private val _selectedAccounts = MutableStateFlow(setOf("All"))
     private val _selectedSortOrder = MutableStateFlow(TransactionSortOrder.DATE_DESC)
     private val _selectedMonth = MutableStateFlow<String?>(null)
     private val _dateRange = MutableStateFlow<Pair<Long?, Long?>>(null to null)
@@ -41,15 +40,15 @@ class TransactionsViewModel(
     private data class InternalFilters(
         val query: String,
         val filter: String,
-        val category: String,
-        val account: String,
+        val categories: Set<String>,
+        val accounts: Set<String>,
         val sortOrder: TransactionSortOrder,
         val month: String?,
         val dateRange: Pair<Long?, Long?>
     )
 
     private data class SecondaryFilters(
-        val account: String,
+        val accounts: Set<String>,
         val sortOrder: TransactionSortOrder,
         val month: String?,
         val dateRange: Pair<Long?, Long?>
@@ -59,17 +58,17 @@ class TransactionsViewModel(
         combine(
             _query.debounce(100L).onStart { emit(_query.value) }.distinctUntilChanged(),
             _selectedFilter,
-            _selectedCategory
+            _selectedCategories
         ) { q, f, c -> Triple(q, f, c) },
-        combine(_selectedAccount, _selectedSortOrder, _selectedMonth, _dateRange) { a, s, m, r -> 
+        combine(_selectedAccounts, _selectedSortOrder, _selectedMonth, _dateRange) { a, s, m, r ->
             SecondaryFilters(a, s, m, r)
         }
     ) { t1, t2 ->
         InternalFilters(
             query = t1.first,
             filter = t1.second,
-            category = t1.third,
-            account = t2.account,
+            categories = t1.third,
+            accounts = t2.accounts,
             sortOrder = t2.sortOrder,
             month = t2.month,
             dateRange = t2.dateRange
@@ -94,6 +93,9 @@ class TransactionsViewModel(
 
                 if (!matchesQuery) return@filter false
 
+                // If a query is active, ignore other filters to search across all transactions
+                if (!isQueryBlank) return@filter true
+
                 val matchesFilter = when (f.filter) {
                     "Debit" -> txn.type == "DEBIT"
                     "Credit" -> txn.type == "CREDIT"
@@ -101,22 +103,24 @@ class TransactionsViewModel(
                 }
                 if (!matchesFilter) return@filter false
 
-                val matchesCategory = f.category == "All" || txn.category == f.category
+                val matchesCategory = f.categories.contains("All") || f.categories.contains(txn.category)
                 if (!matchesCategory) return@filter false
 
-                val matchesAccount = f.account == "All" || txn.accountHint == f.account
+                val matchesAccount = f.accounts.contains("All") || f.accounts.contains(txn.accountHint)
                 if (!matchesAccount) return@filter false
 
                 true
             }
 
-            val filteredWithDates = baseFiltered.filter { txn ->
-                val matchesDateStart = start == null || txn.transactionTime >= start
-                val matchesDateEnd = end == null || txn.transactionTime <= (end + 86400000L - 1)
-                matchesDateStart && matchesDateEnd
+            val filteredWithDates = if (!isQueryBlank) baseFiltered else {
+                baseFiltered.filter { txn ->
+                    val matchesDateStart = start == null || txn.transactionTime >= start
+                    val matchesDateEnd = end == null || txn.transactionTime <= (end + 86400000L - 1)
+                    matchesDateStart && matchesDateEnd
+                }
             }
 
-            val finalFiltered = if (f.month == null) {
+            val finalFiltered = if (f.month == null || !isQueryBlank) {
                 filteredWithDates
             } else {
                 filteredWithDates.filter {
@@ -173,8 +177,8 @@ class TransactionsViewModel(
                 customCategories = customCategories,
                 query = f.query,
                 selectedFilter = f.filter,
-                selectedCategory = f.category,
-                selectedAccount = f.account,
+                selectedCategories = f.categories,
+                selectedAccounts = f.accounts,
                 selectedSortOrder = f.sortOrder,
                 startDateMillis = start,
                 endDateMillis = end,
@@ -191,8 +195,34 @@ class TransactionsViewModel(
 
     fun onQueryChange(query: String) { _query.value = query }
     fun onFilterChange(filter: String) { _selectedFilter.value = filter }
-    fun onCategoryChange(category: String) { _selectedCategory.value = category }
-    fun onAccountChange(account: String) { _selectedAccount.value = account }
+    fun onCategoryChange(category: String) {
+        _selectedCategories.update { current ->
+            if (category == "All") {
+                setOf("All")
+            } else {
+                val next = current.toMutableSet().apply {
+                    remove("All")
+                    if (contains(category)) remove(category) else add(category)
+                }
+                if (next.isEmpty()) setOf("All") else next
+            }
+        }
+    }
+
+    fun onAccountChange(account: String) {
+        _selectedAccounts.update { current ->
+            if (account == "All") {
+                setOf("All")
+            } else {
+                val next = current.toMutableSet().apply {
+                    remove("All")
+                    if (contains(account)) remove(account) else add(account)
+                }
+                if (next.isEmpty()) setOf("All") else next
+            }
+        }
+    }
+
     fun onSortOrderChange(order: TransactionSortOrder) { _selectedSortOrder.value = order }
 
     fun onMonthToggle(month: String) {

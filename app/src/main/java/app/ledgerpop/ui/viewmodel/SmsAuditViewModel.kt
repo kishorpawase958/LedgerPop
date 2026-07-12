@@ -371,14 +371,15 @@ class SmsAuditViewModel(
                 val parsed = SmsParser.parse(entry.sender, entry.body, ignoreSpamCheck = true)
 
                 val merchant = resolveMerchantName(parsed?.merchant ?: "")
-                val category = resolveCategory(merchant, entry.body, entry.sender)
+                val type = parsed?.type ?: "DEBIT"
+                val category = resolveCategory(merchant, entry.body, entry.sender, type)
                 val account = resolveAccountName(parsed?.accountName ?: "")
 
                 val newTxn = SmsTransactionEntity(
                     sender = entry.sender,
                     body = entry.body,
                     amount = parsed?.amount ?: 0.0,
-                    type = parsed?.type ?: "DEBIT",
+                    type = type,
                     merchant = if (merchant.isNotBlank()) merchant else "Manual Recovery",
                     category = category,
                     bank = parsed?.bank ?: "Unknown Bank",
@@ -482,14 +483,15 @@ class SmsAuditViewModel(
             val parsed = SmsParser.parse(entry.sender, entry.body, ignoreSpamCheck = true)
             
             val merchant = resolveMerchantName(parsed?.merchant ?: "")
-            val category = resolveCategory(merchant, entry.body, entry.sender)
+            val type = parsed?.type ?: (if (entry.parsedType.isNotBlank()) entry.parsedType else "DEBIT")
+            val category = resolveCategory(merchant, entry.body, entry.sender, type)
             val account = resolveAccountName(parsed?.accountName ?: "")
 
             val recoveredTxn = SmsTransactionEntity(
                 sender = entry.sender,
                 body = entry.body,
                 amount = parsed?.amount ?: (if (entry.parsedAmount > 0) entry.parsedAmount else 0.0),
-                type = parsed?.type ?: (if (entry.parsedType.isNotBlank()) entry.parsedType else "DEBIT"),
+                type = type,
                 merchant = if (merchant.isNotBlank()) merchant else "Recovered Import",
                 category = category,
                 bank = parsed?.bank ?: "Unknown Bank",
@@ -531,8 +533,8 @@ class SmsAuditViewModel(
         return aliasDao.getTargetName(name) ?: name
     }
 
-    private suspend fun resolveCategory(merchant: String, body: String, sender: String): String {
-        if (merchant.isBlank()) return CategoryEngine.categorize(merchant, body, sender)
+    private suspend fun resolveCategory(merchant: String, body: String, sender: String, type: String): String {
+        if (merchant.isBlank()) return CategoryEngine.categorize(merchant, body, sender, type = type)
         val normalized = CategoryEngine.normalizeMerchant(merchant)
         transactionDao.getLastCategoryForMerchant(normalized)?.let { return it }
         transactionDao.getLastCategoryForMerchant(merchant)?.let { return it }
@@ -542,7 +544,7 @@ class SmsAuditViewModel(
         if (merchant.length >= 3) {
             transactionDao.getLastCategoryForMerchantFuzzy(merchant)?.let { return it }
         }
-        return CategoryEngine.categorize(merchant, body, sender)
+        return CategoryEngine.categorize(merchant, body, sender, type = type)
     }
 
     // ── Reparse All ──────────────────────────────────────────────────────────
@@ -641,7 +643,7 @@ class SmsAuditViewModel(
 
         // Update or Insert transaction
         val merchant = resolveMerchantName(parsed.merchant)
-        val category = resolveCategory(merchant, entry.body, entry.sender)
+        val category = resolveCategory(merchant, entry.body, entry.sender, parsed.type)
         val account = resolveAccountName(parsed.accountName)
 
         val existingTxn = transactionDao.getTransactionByHash(entry.hashKey)
@@ -658,7 +660,15 @@ class SmsAuditViewModel(
                 hashKey = newHashKey
             )
             if (updatedTxn != existingTxn) {
-                transactionDao.update(updatedTxn)
+                // If the hashKey changed, check if the NEW hashKey already exists for ANOTHER transaction
+                if (newHashKey != entry.hashKey && transactionDao.exists(newHashKey) > 0) {
+                    // Collision! Another record already has this hashKey.
+                    // This can happen if the parser logic improved and now considers two different 
+                    // SMS messages as the same transaction (same sender, amount, time, refNo).
+                    transactionDao.delete(existingTxn)
+                } else {
+                    transactionDao.update(updatedTxn)
+                }
                 changed = true
             }
         } else {

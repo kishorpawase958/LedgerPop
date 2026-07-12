@@ -17,10 +17,10 @@ data class SmsMessage(
 open class SmsReader(private val context: Context) {
 
     /**
-     * Reads ALL SMS from inbox.
+     * Reads SMS from inbox.
      * Filtering is handled by SmsFilter inside SmsImporter.
      */
-    open fun readTransactionSms(): List<SmsMessage> {
+    open fun readTransactionSms(since: Long = 0): List<SmsMessage> {
         // Hard check for permission before any query
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             return emptyList()
@@ -32,10 +32,13 @@ open class SmsReader(private val context: Context) {
         val uri = Uri.parse("content://sms/inbox")
         // Use date_sent if available as it matches the SC timestamp used by SmsReceiver
         val projection = arrayOf("address", "body", "date", "date_sent")
+        
+        val selection = if (since > 0) "date > ?" else null
+        val selectionArgs = if (since > 0) arrayOf(since.toString()) else null
 
         var cursor: Cursor? = null
         try {
-            cursor = resolver.query(uri, projection, null, null, "date DESC")
+            cursor = resolver.query(uri, projection, selection, selectionArgs, "date DESC")
             cursor?.use {
                 val addressIdx = it.getColumnIndexOrThrow("address")
                 val bodyIdx = it.getColumnIndexOrThrow("body")

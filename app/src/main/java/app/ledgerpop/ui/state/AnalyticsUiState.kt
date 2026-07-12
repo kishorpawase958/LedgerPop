@@ -20,9 +20,11 @@ data class AnalyticsUiState(
     val endDateMillis: Long? = null,
     val groupBy: GroupingType = GroupingType.MONTHLY,
     val viewType: AnalyticsViewType = AnalyticsViewType.SPENDS,
-    val selectedCategory: String = "All",
-    val selectedAccount: String = "All",
+    val selectedCategories: Set<String> = setOf("All"),
+    val selectedAccounts: Set<String> = setOf("All"),
     val selectedMonth: String? = null,
+
+    val isAggregated: Boolean = false,
 
     // Available Filter Options
     val availableCategories: List<String> = listOf("All"),

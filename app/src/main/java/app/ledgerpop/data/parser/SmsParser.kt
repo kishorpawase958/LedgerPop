@@ -28,13 +28,15 @@ object SmsParser {
     private val creditKeywords = listOf("credit", "credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
     
     private val spamKeywords = listOf(
-        "dear client","pay with points","to be","eligibility","upto","instant","instant credit","instant cash","instant payment","instant loan","get","sale","flat","bonus","schedule","voucher","activating","activate","expire","offer","coupon","save","shortlisted","kindly ignore if paid","code:","otp","otp:","otp is", "otp for", "is your otp", "one time password for",
-        "reminder", "cooling period", "generated", "request", "require", "allot", "disburse", "disbursal",
-        "declined", "failed", "unsuccessful", "insufficient", "will be", "due",
+        "recharge of","dear client","pay with points","to be","eligibility","upto","instant","start now","instant credit","instant cash","instant payment","instant loan","sale","bonus","schedule","voucher","activating","activate","expire","offer","coupon","shortlisted","kindly ignore if paid","code:","otp:","otp is", "otp for", "is your otp", "one time password for",
+        "reminder", "cooling period", "generated", "request", "require", "allot", "disburse", "disbursal","claim your","free higher limit","limit increased","upgraded",
+        "declined", "failed", "unsuccessful", "insufficient", "will be", "due", "free cash","top offer","best deal","exclusive offer","shortlisted","upi pin","pin setup","account setup","lenskart account","continue to","offer end","use code","signed up","get approved","get free","claim now","welcome bonus","welcome offer","set pin","set code",
         // Mutual Funds / SIP / Demat / Corporate action blocks
-        "sip transaction", "sip purchase", "units", "nav of", "folio", "processed at nav", "cdsl: ", "nsdl: ",
+        "sip transaction", "sip purchase", "units", "nav of", "folio", "processed at nav", "cdsl:", "nsdl:","processingfee","processing fee","avail your","apply now","card application","card applied","convert spends",
         // Marketing / Loan offers / Rewards blocks
-        "confirm your tenure", "tenure", "redeem your", "reward points", "edge reward", "pre-approved", "eligible for loan"
+        "confirm your tenure", "tenure", "redeem your", "reward points", "edge reward", "pre-approved", "eligible for loan","get winning","prize pool","credit score","increase your",
+        // Balance alerts / Summaries
+        "view your last"
     )
 
     fun getStructure(body: String): String {
@@ -122,7 +124,10 @@ object SmsParser {
         val patterns = listOf(
             Regex("""(?i)(?:ref\s*no|ref|utr|txn\s*id|id|trans\s*id)[:\-\s]+([A-Z0-9]{6,20})"""),
             Regex("""(?i)ref[:\-\s]*([A-Z0-9]{6,20})"""),
-            Regex("""(?i)No\.\s*([A-Z0-9]{8,20})""")
+            Regex("""(?i)[-\s]([A-Z]{4}N\d{7,15})(?:\.|\s|$)"""),
+            Regex("""(?i)No\.\s*([A-Z0-9]{8,20})"""),
+            Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI)/([A-Z0-9]{8,22})/(?:[A-Z0-9\s]{2,40})?"""),
+            Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI|UTR|REF)[:\-\s/]+([A-Z0-9]{10,22})""")
         )
         for (pattern in patterns) {
             val match = pattern.find(text)
@@ -168,72 +173,114 @@ object SmsParser {
         }
     }
 
+    private val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for any queries|more info|any query|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|not|not\s+u|not\s+you|if\s+not|to\s+dispute|to\s+raise|fvg|favoring|favouring|sms|block|call|report)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))[.?!]\s*|$)"""
+    private val mChars = """A-Za-z0-9\s.&'/\-@*,"""
+
+    private val merchantPatterns = listOf(
+        // 1. High-Priority: Extract trailing payee/merchant from raw slash routing strings (e.g. UPI/P2M/Id/Merchant)
+        Regex("""(?i)(?:UPI|NEFT|IMPS)/(?:P2M|P2P|P2A)/\d+/([$mChars]{2,100}?)$lookahead"""),
+
+        // 2. High-Priority: Extract clean merchant segments trapped inside semicolon updates (e.g. ; ZERODHA... credited)
+        Regex("""(?i);\s*([A-Z0-9\s.&'\-]{2,100}?)\s+credited"""),
+
+        // 3. High-Priority: Intercept institutional banking updates to prevent slash punctuation lookahead drops
+        Regex("""(?i)Info:\s*(?:NEFT|IMPS|RTGS|UPI)/([$mChars]{2,100}?)$lookahead"""),
+
+        // 4. High-Priority: Extract from common bank transfer formats via/NEFT/REF/Merchant
+        Regex("""(?i)(?:via\s+)?(?:NEFT|IMPS|RTGS|UPI)/(?:[^/]+/)?([$mChars]{2,100}?)$lookahead"""),
+        
+        // --- Legacy patterns continue standard extraction without regressions ---
+        Regex("""(?i)(?:fvg|favoring|favouring)[:\-]\s*([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)Transferred to\s+([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)(?:for|towards)\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at|subscription\s+at)\s+([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)spent\s+at\s+([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)trf to\s+([$mChars]{2,100}?)(?=\s+(?:Refno|Ref|on|at|for|via|$|\.))"""),
+        Regex("""(?i)(?:at(?!\s+your\b)|to|via|in|info\s*vpa|paid\s*to|sent\s*to|towards|transfer\s+from|trf\s+from|for|from(?!\s+(?:your|a/c|acct|my|sbi|hdfc|icici|axis|kotak|pnb|boi|idfc|indus|canara|union|rbl|fed|idbi|citi|scb|hsbc|bank)\b)|by)\s+([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)paid from your .+ to\s+([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)trf to\s+([$mChars]{2,100}?)(?:\s+Refno|\.|$)"""),
+        Regex("""(?i)by\s+[A-Za-z0-9]+\s+from\s+([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)by\s+([$mChars]{2,100}?)\s+ref\s+no"""),
+        Regex("""(?i)IST\s+(?!\d{1,2}:\d{2})\s*([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)(?:Info\s*-\s*|Info:\s*)\s*([$mChars]{2,100}?)$lookahead""")
+    )
+
+    private val leadingDigitsRegex = Regex("""^\d+\s+""")
+    private val timeRegex = Regex("""\d{1,2}:\d{2}""")
+    private val bankNames = setOf("sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "idfc", "indus", "canara", "union", "rbl", "fed", "idbi", "citi", "scb", "hsbc", "jupiter")
+    private val junkWords = setOf("payment", "transaction", "txn", "transfer", "spent", "paid", "debited", "credited", "dispute", "raise", "call", "using", "thanks", "clearing", "subject", "cheque")
+
     private fun extractMerchant(text: String): String {
-        val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|to\s+dispute|to\s+raise|fvg|favoring|favouring)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))\.\s*|$)"""
-        val mChars = """A-Za-z0-9\s.&'/\-@*,"""
-
-        val patterns = listOf(
-            // 1. High-Priority: Extract trailing payee/merchant from raw slash routing strings (e.g. UPI/P2M/Id/Merchant)
-            Regex("""(?i)UPI/(?:P2M|P2P)/\d+/([$mChars]{2,40}?)$lookahead"""),
-
-            // 2. High-Priority: Extract clean merchant segments trapped inside semicolon updates (e.g. ; ZERODHA... credited)
-            Regex("""(?i);\s*([A-Z0-9\s.&'\-]{2,40}?)\s+credited"""),
-
-            // 3. High-Priority: Intercept institutional banking updates to prevent slash punctuation lookahead drops
-            Regex("""(?i)Info:\s*(?:NEFT|IMPS|RTGS|UPI)/([$mChars]{2,40}?)$lookahead"""),
-            
-            // --- Legacy patterns continue standard extraction without regressions ---
-            Regex("""(?i)(?:fvg|favoring|favouring)[:\-]\s*([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)Transferred to\s+([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)(?:for|towards)\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at|subscription\s+at)\s+([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)spent\s+at\s+([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)trf to\s+([$mChars]{2,40}?)(?=\s+(?:Refno|Ref|on|at|for|via|$|\.))"""),
-            Regex("""(?i)(?:at(?!\s+your\b)|to|info\s*vpa|paid\s*to|sent\s*to|towards|transfer\s+from|trf\s+from|for|from(?!\s+(?:your|a/c|acct|my|sbi|hdfc|icici|axis|kotak|pnb|boi|idfc|indus|canara|union|rbl|fed|idbi|citi|scb|hsbc|bank)\b)|by)\s+([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)paid from your .+ to\s+([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)trf to\s+([$mChars]{2,40}?)(?:\s+Refno|\.|$)"""),
-            Regex("""(?i)by\s+[A-Za-z0-9]+\s+from\s+([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)by\s+([$mChars]{2,40}?)\s+ref\s+no"""),
-            Regex("""(?i)IST\s+(?!\d{1,2}:\d{2})\s*([$mChars]{2,40}?)$lookahead"""),
-            Regex("""(?i)(?:Info\s*-\s*|Info:\s*)\s*([$mChars]{2,40}?)$lookahead""")
-        )
-
         val candidates = mutableListOf<Pair<Int, String>>()
 
-        for (pattern in patterns) {
-            pattern.findAll(text).forEach { match ->
-                val merchant = match.groupValues.getOrNull(1)?.trim()
-                if (!merchant.isNullOrBlank() && merchant.length > 2) {
-                    if (match.value.startsWith("for", ignoreCase = true)) {
-                        val before = text.take(match.range.first).lowercase().trimEnd().trimEnd(',', '.', '!', ';').trimEnd()
-                        if (before.endsWith("thanks") || before.endsWith("thank you") || before.endsWith("thnx")) {
-                            return@forEach
-                        }
+        for (pattern in merchantPatterns) {
+            val matches = pattern.findAll(text)
+            for (match in matches) {
+                var merchant = match.groupValues.getOrNull(1)?.trim() ?: ""
+                if (merchant.length <= 2) continue
+
+                // Clean up technical prefixes like NEFT Cr-IFSC- or IMPS-
+                if (merchant.startsWith("NEFT", true) || merchant.startsWith("IMPS", true) || 
+                    merchant.startsWith("RTGS", true) || merchant.startsWith("UPI", true)) {
+                    val parts = merchant.split("-")
+                    merchant = if (parts.size > 2 && (parts[0].contains("Cr", true) || parts[0].contains("Dr", true))) {
+                        parts.drop(2).joinToString(" ").trim()
+                    } else if (parts.size > 1) {
+                        parts.drop(1).joinToString(" ").trim()
+                    } else {
+                        merchant
                     }
+                    merchant = merchant.replace(leadingDigitsRegex, "").trim()
+                }
 
-                    val lower = merchant.lowercase()
-                    val junkWords = setOf("payment", "transaction", "txn", "transfer", "spent", "paid", "debited", "credited", "dispute", "raise", "call", "using", "thanks")
-                    val banks = setOf("sbi", "hdfc", "icici", "axis", "kotak", "pnb", "boi", "idfc", "indus", "canara", "union", "rbl", "fed", "idbi", "citi", "scb", "hsbc", "jupiter")
+                if (match.value.startsWith("for", ignoreCase = true)) {
+                    val before = text.take(match.range.first).lowercase().trimEnd().trimEnd(',', '.', '!', ';').trimEnd()
+                    if (before.endsWith("thanks") || before.endsWith("thank you") || before.endsWith("thnx")) continue
+                }
 
-                    val isJunk = (lower.contains("card") && !lower.contains("credit card")) ||
-                                 lower.startsWith("your") ||
-                                 lower.contains("account") || lower.startsWith("rs") ||
-                                 lower.startsWith("inr") || lower.contains("a/c") ||
-                                 merchant.matches(Regex("""\d{1,2}:\d{2}""")) ||
-                                 (lower.contains("bank") && !lower.contains("atm") && !lower.contains("cc")) ||
-                                 junkWords.any { lower.startsWith(it) } ||
-                                 banks.contains(lower) ||
-                                 merchant.first().isDigit() ||
-                                 lower.contains("raise an issue") ||
-                                 lower.contains("if not u") ||
-                                 lower.contains("other services") ||
-                                 lower.contains("mob bk") ||
-                                 lower.contains("net bk")
+                val lower = merchant.lowercase()
+                
+                val isJunk = (lower.contains("card") && !lower.contains("credit card")) ||
+                             lower.startsWith("your") ||
+                             lower.contains("account") || lower.startsWith("rs") ||
+                             lower.startsWith("inr") || lower.contains("a/c") ||
+                             merchant.matches(timeRegex) ||
+                             (lower.contains("bank") && !lower.contains("atm") && !lower.contains("cc")) ||
+                             junkWords.any { lower.startsWith(it) || lower == it } ||
+                             bankNames.contains(lower) ||
+                             merchant.first().isDigit() ||
+                             lower.contains("raise an issue") ||
+                             lower.contains("if not u") ||
+                             lower.contains("if not you") ||
+                             lower.contains("other services") ||
+                             lower.contains("more info") ||
+                             lower.contains("any query") ||
+                             lower.contains("any queries") ||
+                             lower.contains("further details") ||
+                             lower.contains("help") ||
+                             lower.contains("mob bk") ||
+                             lower.contains("net bk") ||
+                             lower.contains("any help") ||
+                             lower.contains("you,") ||
+                             lower.contains("you") ||
+                             lower.contains("clearing") ||
+                             lower.contains("subject to") ||
+                             lower.contains("view your") ||
+                             lower.contains("any assistance") ||
+                             lower.contains("whatsapp bal") ||
+                             lower.contains("block") ||
+                             lower.contains("confirm") ||
+                             lower.contains("check") ||
+                             lower.contains("upgrade") ||
+                             lower.contains("update") ||
+                             lower.contains("assistance")
 
-                    if (!isJunk) {
-                        candidates.add(match.range.first to merchant)
-                    }
+
+                if (!isJunk) {
+                    candidates.add(match.range.first to merchant)
                 }
             }
+            // Optimization: If we find a high-priority merchant (first 4 patterns), we stop searching legacy patterns
+            if (candidates.isNotEmpty() && merchantPatterns.indexOf(pattern) < 4) break
         }
 
         if (candidates.isNotEmpty()) {

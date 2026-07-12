@@ -31,6 +31,23 @@ object AmountUtils {
     }
 
     /**
+     * Formats amount in a compact way (e.g., 1.2k, 1.5L)
+     */
+    fun formatCompact(amount: Double): String {
+        val absAmount = kotlin.math.abs(amount)
+        val sign = if (amount < 0) "-" else ""
+        
+        val formatted = when {
+            absAmount >= 10_000_000 -> "%.1fCr".format(absAmount / 10_000_000).replace(".0", "")
+            absAmount >= 100_000 -> "%.1fL".format(absAmount / 100_000).replace(".0", "")
+            absAmount >= 1000 -> "%.1fk".format(absAmount / 1000).replace(".0", "")
+            else -> formatter.format(absAmount)
+        }
+        
+        return "${sign}₹$formatted"
+    }
+
+    /**
      * Returns a raw string for editing, with up to 2 decimal places and no commas.
      */
     fun formatRaw(amount: Double): String {

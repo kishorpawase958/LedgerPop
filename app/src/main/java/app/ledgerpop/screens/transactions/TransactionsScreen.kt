@@ -203,18 +203,18 @@ fun TransactionsScreen(
                                             )
                                         }
                                     }
-                                    if (uiState.selectedAccount != "All") {
-                                        FilterStatusChip(uiState.selectedAccount) {
-                                            viewModel.onAccountChange(
-                                                "All"
-                                            )
+                                    if (!uiState.selectedAccounts.contains("All")) {
+                                        val text = if (uiState.selectedAccounts.size == 1) uiState.selectedAccounts.first() 
+                                                   else "Account (${uiState.selectedAccounts.size})"
+                                        FilterStatusChip(text) {
+                                            viewModel.onAccountChange("All")
                                         }
                                     }
-                                    if (uiState.selectedCategory != "All") {
-                                        FilterStatusChip(uiState.selectedCategory) {
-                                            viewModel.onCategoryChange(
-                                                "All"
-                                            )
+                                    if (!uiState.selectedCategories.contains("All")) {
+                                        val text = if (uiState.selectedCategories.size == 1) uiState.selectedCategories.first() 
+                                                   else "Category (${uiState.selectedCategories.size})"
+                                        FilterStatusChip(text) {
+                                            viewModel.onCategoryChange("All")
                                         }
                                     }
                                     if (uiState.startDateMillis != null) {
@@ -372,43 +372,48 @@ fun TransactionsScreen(
                             onDismissRequest = { showSortPopup = false },
                             shape = RoundedCornerShape(20.dp),
                             containerColor = MaterialTheme.colorScheme.surface,
-                            modifier = Modifier.width(200.dp)
+                            modifier = Modifier.width(220.dp)
                         ) {
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Column(modifier = Modifier.padding(vertical = 8.dp)) {
                                 Text(
                                     text = "Sort By",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                 )
-                                TransactionSortOrder.entries.forEach { order ->
-                                    val isSelected = uiState.selectedSortOrder == order
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = order.label,
-                                                style = MaterialTheme.typography.bodyLarge
-                                            )
-                                        },
-                                        onClick = {
-                                            viewModel.onSortOrderChange(order)
-                                            showSortPopup = false
-                                        },
-                                        trailingIcon = {
-                                            if (isSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Check,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(18.dp),
-                                                    tint = MaterialTheme.colorScheme.primary
-                                                )
-                                            }
-                                        },
-                                        colors = MenuDefaults.itemColors(
-                                            textColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    )
-                                }
+                                
+                                SortRow(
+                                    label = "Date",
+                                    ascOrder = TransactionSortOrder.DATE_ASC,
+                                    descOrder = TransactionSortOrder.DATE_DESC,
+                                    selectedOrder = uiState.selectedSortOrder,
+                                    onOrderClick = {
+                                        viewModel.onSortOrderChange(it)
+                                        showSortPopup = false
+                                    }
+                                )
+                                
+                                SortRow(
+                                    label = "Merchant",
+                                    ascOrder = TransactionSortOrder.MERCHANT_ASC,
+                                    descOrder = TransactionSortOrder.MERCHANT_DESC,
+                                    selectedOrder = uiState.selectedSortOrder,
+                                    onOrderClick = {
+                                        viewModel.onSortOrderChange(it)
+                                        showSortPopup = false
+                                    }
+                                )
+                                
+                                SortRow(
+                                    label = "Amount",
+                                    ascOrder = TransactionSortOrder.AMOUNT_ASC,
+                                    descOrder = TransactionSortOrder.AMOUNT_DESC,
+                                    selectedOrder = uiState.selectedSortOrder,
+                                    onOrderClick = {
+                                        viewModel.onSortOrderChange(it)
+                                        showSortPopup = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -451,15 +456,15 @@ fun TransactionsScreen(
                     )
                 }
 
-                val isAmountSort = uiState.selectedSortOrder == TransactionSortOrder.AMOUNT_DESC || 
-                                 uiState.selectedSortOrder == TransactionSortOrder.AMOUNT_ASC
+                val showMonthlyGroups = uiState.selectedSortOrder == TransactionSortOrder.DATE_DESC || 
+                                       uiState.selectedSortOrder == TransactionSortOrder.DATE_ASC
 
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    if (isAmountSort) {
+                    if (!showMonthlyGroups) {
                         items(
                             items = filtered,
                             key = { it.id }
@@ -574,7 +579,7 @@ fun TransactionsScreen(
         FloatingFilterPopup(
             title = "Filter Account",
             options = uiState.availableAccounts,
-            selected = uiState.selectedAccount,
+            selected = uiState.selectedAccounts,
             onSelect = { viewModel.onAccountChange(it) },
             onDismiss = { showAccountFilterPopup = false },
             yOffset = popupYOffset
@@ -585,7 +590,7 @@ fun TransactionsScreen(
         FloatingFilterPopup(
             title = "Filter Category",
             options = uiState.availableCategories,
-            selected = uiState.selectedCategory,
+            selected = uiState.selectedCategories,
             onSelect = { viewModel.onCategoryChange(it) },
             onDismiss = { showCategoryFilterPopup = false },
             emojiProvider = { CategoryEngine.emoji(it, uiState.customCategories) },
@@ -877,8 +882,6 @@ private fun TransactionRow(
         }
 
         // Icon (Clickable for quick category change)
-
-        // Icon (Clickable for quick category change)
         Box(
             modifier = Modifier
                 .size(42.dp)
@@ -1018,7 +1021,7 @@ fun QuickCategoryUpdateDialog(
     val context = LocalContext.current
     val db = remember { LedgerPopDatabase.getInstance(context) }
     val scope = rememberCoroutineScope()
-    
+
     var selectedCategory by remember { mutableStateOf(txn.category.ifBlank { CategoryEngine.OTHER }) }
     
     var showBulkUpdateDialog by remember { mutableStateOf(false) }
@@ -1137,5 +1140,61 @@ fun QuickCategoryUpdateDialog(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun SortRow(
+    label: String,
+    ascOrder: TransactionSortOrder,
+    descOrder: TransactionSortOrder,
+    selectedOrder: TransactionSortOrder,
+    onOrderClick: (TransactionSortOrder) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selectedOrder == ascOrder || selectedOrder == descOrder)
+                MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+
+        Row {
+            IconButton(
+                onClick = { onOrderClick(ascOrder) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ArrowUpward,
+                    contentDescription = "Ascending",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (selectedOrder == ascOrder)
+                        MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+
+            IconButton(
+                onClick = { onOrderClick(descOrder) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.ArrowDownward,
+                    contentDescription = "Descending",
+                    modifier = Modifier.size(20.dp),
+                    tint = if (selectedOrder == descOrder)
+                        MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
     }
 }

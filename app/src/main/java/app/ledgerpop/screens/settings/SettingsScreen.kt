@@ -42,6 +42,7 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.ui.state.AppTheme
 import app.ledgerpop.ui.state.AppLogo
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
+import androidx.core.graphics.createBitmap
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -536,18 +537,29 @@ private fun AboutSection() {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("LedgerPop", style = MaterialTheme.typography.titleMedium)
-            Text("Version $versionName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "LedgerPop",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Version $versionName",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Text(
-                "Smart SMS expense tracker.\nSecure & on-device.",
-                style = MaterialTheme.typography.bodySmall,
+                "Smart SMS expense tracker.\nYour data stays private and on-device",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                lineHeight = 18.sp
+                lineHeight = 20.sp
             )
+
         }
     }
 }
@@ -622,7 +634,6 @@ private fun LogoSelectionItem(
     onSelect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val logoRes = when (logo) {
         AppLogo.LIGHT -> R.mipmap.ic_launcher_light
         AppLogo.DARK -> R.mipmap.ic_launcher_dark
@@ -630,18 +641,7 @@ private fun LogoSelectionItem(
         else -> R.mipmap.ic_launcher
     }
 
-    val painter = remember(logoRes) {
-        val drawable = ContextCompat.getDrawable(context, logoRes)
-        val bitmap = Bitmap.createBitmap(
-            drawable!!.intrinsicWidth.coerceAtLeast(1),
-            drawable.intrinsicHeight.coerceAtLeast(1),
-            Bitmap.Config.ARGB_8888
-        )
-        val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, canvas.width, canvas.height)
-        drawable.draw(canvas)
-        BitmapPainter(bitmap.asImageBitmap())
-    }
+    val painter = rememberLauncherPainter(logoRes)
 
     Column(
         modifier = modifier
@@ -929,5 +929,20 @@ private fun ThemeOption(
         RadioButton(selected = selected, onClick = null)
         Spacer(Modifier.width(12.dp))
         Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun rememberLauncherPainter(logoRes: Int): androidx.compose.ui.graphics.painter.Painter {
+    val context = LocalContext.current
+    return remember(logoRes) {
+        val drawable = ContextCompat.getDrawable(context, logoRes)!!
+        val width = drawable.intrinsicWidth.coerceAtLeast(1)
+        val height = drawable.intrinsicHeight.coerceAtLeast(1)
+        val bitmap = createBitmap(width, height)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, width, height)
+        drawable.draw(canvas)
+        BitmapPainter(bitmap.asImageBitmap())
     }
 }
