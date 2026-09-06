@@ -60,15 +60,15 @@ class SmsImporter(
         val normalized = CategoryEngine.normalizeMerchant(merchant)
         
         // Exact match check
-        dao.getLastCategoryForMerchant(normalized)?.let { return it }
-        dao.getLastCategoryForMerchant(merchant)?.let { return it }
+        dao.getLastCategoryForMerchant(normalized, type)?.let { return it }
+        dao.getLastCategoryForMerchant(merchant, type)?.let { return it }
         
         // Fuzzy match check (prefix/keyword matching)
         if (normalized.length >= 3) {
-            dao.getLastCategoryForMerchantFuzzy(normalized)?.let { return it }
+            dao.getLastCategoryForMerchantFuzzy(normalized, type)?.let { return it }
         }
         if (merchant.length >= 3) {
-            dao.getLastCategoryForMerchantFuzzy(merchant)?.let { return it }
+            dao.getLastCategoryForMerchantFuzzy(merchant, type)?.let { return it }
         }
         
         // 2. Fallback to CategoryEngine auto-categorization
