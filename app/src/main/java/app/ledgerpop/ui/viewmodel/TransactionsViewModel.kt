@@ -249,6 +249,10 @@ class TransactionsViewModel(
         viewModelScope.launch { repository.deleteByIds(ids) }
     }
 
+    fun updateCategories(ids: List<Int>, category: String) {
+        viewModelScope.launch { repository.updateCategoryForIds(ids, category) }
+    }
+
     fun updateAnalytics(ids: List<Int>, include: Boolean) {
         viewModelScope.launch { repository.updateBillableForIds(ids, include) }
     }

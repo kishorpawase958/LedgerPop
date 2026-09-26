@@ -24,7 +24,7 @@ object SmsParser {
         Regex("""(?:Dr.|Cr.|debited by|debited from|debited for|credited by|credited to|credited with|credited for|payment of|spent on|spent|spent at|spend|paid|paid from|for|of|withdrawn at|txn of|transaction of)\s*(?:INR|Rs\.?|₹|Rs:)?\s*([0-9,]+(?:\.\d{1,2})?)""", RegexOption.IGNORE_CASE)
     )
 
-    private val debitKeywords = listOf("dr.","debit", "debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
+    private val debitKeywords = listOf("dr.","debit", "debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "sent", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
     private val creditKeywords = listOf("cr.","credit", "credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
     
     private val spamKeywords = listOf(
@@ -67,7 +67,8 @@ object SmsParser {
         val lower = text.lowercase(Locale.getDefault())
 
         // Ignore SMS from policy related senders
-        if (sender.uppercase(Locale.getDefault()).contains("POLICY")) return null
+        val senderUpper = sender.uppercase(Locale.getDefault())
+        if (senderUpper.contains("POLICY") || senderUpper.contains("POLBAZ") || senderUpper.contains("POLBZR")) return null
 
         // Filter out spam or non-transactional messages
         if (!ignoreSpamCheck && spamKeywords.any { lower.contains(it) }) return null
@@ -161,7 +162,9 @@ object SmsParser {
 
         // Explicit High-Priority Action Verbs
         if (analyticalText.contains("debited") || analyticalText.contains("spent") || 
-            analyticalText.contains("withdrawn") || analyticalText.contains("paid from")
+            analyticalText.contains("withdrawn") || analyticalText.contains("paid from") ||
+            analyticalText.contains("sent rs") || analyticalText.contains("sent inr") ||
+            analyticalText.startsWith("sent ") || analyticalText.contains(" sent ")
         ) return "DEBIT"
         
         if (analyticalText.contains("credited") || analyticalText.contains("received")) return "CREDIT"
