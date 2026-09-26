@@ -536,13 +536,13 @@ class SmsAuditViewModel(
     private suspend fun resolveCategory(merchant: String, body: String, sender: String, type: String): String {
         if (merchant.isBlank()) return CategoryEngine.categorize(merchant, body, sender, type = type)
         val normalized = CategoryEngine.normalizeMerchant(merchant)
-        transactionDao.getLastCategoryForMerchant(normalized)?.let { return it }
-        transactionDao.getLastCategoryForMerchant(merchant)?.let { return it }
+        transactionDao.getLastCategoryForMerchant(normalized, type)?.let { return it }
+        transactionDao.getLastCategoryForMerchant(merchant, type)?.let { return it }
         if (normalized.length >= 3) {
-            transactionDao.getLastCategoryForMerchantFuzzy(normalized)?.let { return it }
+            transactionDao.getLastCategoryForMerchantFuzzy(normalized, type)?.let { return it }
         }
         if (merchant.length >= 3) {
-            transactionDao.getLastCategoryForMerchantFuzzy(merchant)?.let { return it }
+            transactionDao.getLastCategoryForMerchantFuzzy(merchant, type)?.let { return it }
         }
         return CategoryEngine.categorize(merchant, body, sender, type = type)
     }

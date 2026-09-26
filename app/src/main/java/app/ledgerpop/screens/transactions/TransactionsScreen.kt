@@ -96,6 +96,8 @@ fun TransactionsScreen(
     var lastHandledId by rememberSaveable { mutableIntStateOf(-1) }
 
     var selectedIds by remember { mutableStateOf(setOf<Int>()) }
+    var showCategoryConfirm by remember { mutableStateOf(false) }
+    var showMixedTypeWarning by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showAnalyticsConfirm by remember { mutableStateOf(false) }
 
@@ -160,6 +162,16 @@ fun TransactionsScreen(
                         count = selectedIds.size,
                         onClearSelection = { selectedIds = emptySet() },
                         onSelectAll = { selectedIds = filtered.map { it.id }.toSet() },
+                        onUpdateCategory = {
+                            val selectedTxns = uiState.allTransactions.filter { it.id in selectedIds }
+                            val hasDebit = selectedTxns.any { it.type == "DEBIT" }
+                            val hasCredit = selectedTxns.any { it.type == "CREDIT" }
+                            if (hasDebit && hasCredit) {
+                                showMixedTypeWarning = true
+                            } else {
+                                showCategoryConfirm = true
+                            }
+                        },
                         onDelete = { showDeleteConfirm = true },
                         onRemoveFromAnalytics = { showAnalyticsConfirm = true }
                     )
@@ -735,6 +747,90 @@ fun TransactionsScreen(
             }
         )
     }
+
+    if (showMixedTypeWarning) {
+        AlertDialog(
+            onDismissRequest = { showMixedTypeWarning = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Cannot Update Categories") },
+            text = {
+                Text("Credit and Debit categories can’t be updated together. Please choose one transaction type and try again.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showMixedTypeWarning = false }) {
+                    Text("OK")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    if (showCategoryConfirm) {
+        val customCategories = uiState.customCategories
+        val selectedTxns = remember(selectedIds, uiState.allTransactions) {
+            uiState.allTransactions.filter { it.id in selectedIds }
+        }
+        val isCredit = remember(selectedTxns) { selectedTxns.any { it.type == "CREDIT" } }
+
+        val categories = remember(isCredit, customCategories) {
+            val standard = if (isCredit) CategoryEngine.creditCategories() else CategoryEngine.debitCategories()
+            val custom = customCategories.filter { it.type == (if (isCredit) "CREDIT" else "DEBIT") }.map { it.name }
+            (standard + custom).distinct()
+        }
+        var selectedCategory by remember { mutableStateOf(categories.firstOrNull() ?: CategoryEngine.OTHER) }
+
+        AlertDialog(
+            onDismissRequest = { showCategoryConfirm = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Update Category") },
+            text = {
+                Column {
+                    Text(
+                        text = "Select a category for ${selectedIds.size} selected transactions:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        categories.forEach { cat ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text("${CategoryEngine.emoji(cat, customCategories)} $cat") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.updateCategories(selectedIds.toList(), selectedCategory)
+                        selectedIds = emptySet()
+                        showCategoryConfirm = false
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCategoryConfirm = false }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
 }
 
 @Composable
@@ -742,6 +838,7 @@ private fun SelectionTopBar(
     count: Int,
     onClearSelection: () -> Unit,
     onSelectAll: () -> Unit,
+    onUpdateCategory: () -> Unit,
     onDelete: () -> Unit,
     onRemoveFromAnalytics: () -> Unit
 ) {
@@ -767,6 +864,13 @@ private fun SelectionTopBar(
             )
             IconButton(onClick = onSelectAll) {
                 Icon(Icons.Rounded.SelectAll, contentDescription = "Select All")
+            }
+            IconButton(onClick = onUpdateCategory) {
+                Icon(
+                    Icons.Rounded.Category,
+                    contentDescription = "Update Category",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
             IconButton(onClick = onRemoveFromAnalytics) {
                 Icon(

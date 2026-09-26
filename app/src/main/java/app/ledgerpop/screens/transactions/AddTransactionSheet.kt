@@ -83,19 +83,20 @@ fun AddTransactionDialog(
     var amountError by remember { mutableStateOf(false) }
 
     // Lookback logic: Auto-fill category when merchant is entered
-    LaunchedEffect(merchant) {
+    LaunchedEffect(merchant, isExpense) {
         val trimmed = merchant.trim()
+        val type = if (isExpense) "DEBIT" else "CREDIT"
         if (trimmed.length >= 3) {
             val normalized = CategoryEngine.normalizeMerchant(trimmed)
-            val historicalCategory = db.smsTransactionDao().getLastCategoryForMerchant(normalized)
-                ?: db.smsTransactionDao().getLastCategoryForMerchant(trimmed)
-                ?: db.smsTransactionDao().getLastCategoryForMerchantFuzzy(normalized)
-                ?: db.smsTransactionDao().getLastCategoryForMerchantFuzzy(trimmed)
+            val historicalCategory = db.smsTransactionDao().getLastCategoryForMerchant(normalized, type)
+                ?: db.smsTransactionDao().getLastCategoryForMerchant(trimmed, type)
+                ?: db.smsTransactionDao().getLastCategoryForMerchantFuzzy(normalized, type)
+                ?: db.smsTransactionDao().getLastCategoryForMerchantFuzzy(trimmed, type)
 
             if (historicalCategory != null) {
                 category = historicalCategory
             } else {
-                val engineCat = CategoryEngine.categorize(trimmed, "", "", type = if (isExpense) "DEBIT" else "CREDIT")
+                val engineCat = CategoryEngine.categorize(trimmed, "", "", type = type)
                 if (engineCat != "Other") category = engineCat
             }
         } else if (trimmed.isEmpty()) {
