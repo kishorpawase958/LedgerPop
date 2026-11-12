@@ -227,6 +227,7 @@ fun LedgerPopApp(
 
                     composable(Screen.Home.route) {
                         HomeScreen(
+                            floatingButtonTimer = uiState.floatingButtonTimer,
                             onNavigateToTransactions = {
                                 navController.navigate(Screen.Transactions.createRoute()) {
                                     popUpTo(navController.graph.findStartDestination().id) {
@@ -248,6 +249,7 @@ fun LedgerPopApp(
                     ) { backStackEntry ->
                         val transactionId = backStackEntry.arguments?.getInt("id") ?: -1
                         TransactionsScreen(
+                            floatingButtonTimer = uiState.floatingButtonTimer,
                             initialTransactionId = if (transactionId != -1) transactionId else null,
                             onClearInitialId = {
                                 backStackEntry.arguments?.putInt("id", -1)
@@ -256,11 +258,14 @@ fun LedgerPopApp(
                     }
 
                     composable(Screen.Analytics.route) {
-                        AnalyticsScreen()
+                        AnalyticsScreen(
+                            floatingButtonTimer = uiState.floatingButtonTimer
+                        )
                     }
 
                     composable(Screen.Settings.route) {
                         SettingsScreen(
+                            viewModel = settingsViewModel,
                             onNavigateToSmsAudit = {
                                 navController.navigate(Screen.SmsAudit.route)
                             },
@@ -284,18 +289,21 @@ fun LedgerPopApp(
 
                     composable(Screen.Permissions.route) {
                         PermissionsScreen(
+                            viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
                     composable(Screen.Categories.route) {
                         CategoryManagementScreen(
+                            viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
                     composable(Screen.Accounts.route) {
                         AccountManagementScreen(
+                            viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -326,7 +334,7 @@ fun LedgerPopApp(
                                 style = HazeDefaults.style(
                                     backgroundColor = MaterialTheme.colorScheme.surface,
                                     blurRadius = 20.dp,
-                                    tint = HazeDefaults.tint(MaterialTheme.colorScheme.surface.copy(alpha = 0.25f))
+                                    tint = HazeDefaults.tint(MaterialTheme.colorScheme.surface.copy(alpha = 0.45f))
                                 )
                             ),
                         shape = RoundedCornerShape(24.dp),
@@ -345,7 +353,7 @@ fun LedgerPopApp(
                             bottomNavItems.forEach { item ->
                                 val selected = currentRoute == item.screen.route
                                 val contentColor by animateColorAsState(
-                                    targetValue = if (selected) MaterialTheme.colorScheme.primary 
+                                    targetValue = if (selected) MaterialTheme.colorScheme.primary
                                                  else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     label = "nav_item_color"
                                 )

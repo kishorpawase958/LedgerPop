@@ -67,4 +67,10 @@ interface SmsAuditDao {
 
     @Query("DELETE FROM sms_audit")
     suspend fun deleteAll()
+
+    @Query("SELECT * FROM sms_audit WHERE hashKey = :hashKey LIMIT 1")
+    suspend fun getEntryByHash(hashKey: String): SmsAuditEntity?
+
+    @Query("SELECT * FROM sms_audit WHERE LOWER(body) LIKE '%' || LOWER(:keyword) || '%' ORDER BY timestamp DESC")
+    suspend fun getAuditEntriesMatchingKeyword(keyword: String): List<SmsAuditEntity>
 }

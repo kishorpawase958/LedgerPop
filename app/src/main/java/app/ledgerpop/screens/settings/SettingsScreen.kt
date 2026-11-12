@@ -51,12 +51,15 @@ fun SettingsScreen(
     onNavigateToSmsAudit: () -> Unit,
     onNavigateToCategories: () -> Unit,
     onNavigateToAccounts: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(
+            LedgerPopDatabase.getInstance(LocalContext.current),
+            LocalContext.current
+        )
+    )
 ) {
     val context = LocalContext.current
-    val db = remember { LedgerPopDatabase.getInstance(context) }
-    val factory = remember(db, context) { SettingsViewModel.factory(db, context) }
-    val viewModel: SettingsViewModel = viewModel(factory = factory)
     val uiState by viewModel.uiState.collectAsState()
 
     LaunchedEffect(uiState.lastImportResult, uiState.lastImportMessage) {
@@ -128,6 +131,7 @@ fun SettingsScreen(
     var showNameDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLogoDialog by remember { mutableStateOf(false) }
+    var showTimerDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showFullScanConfirmDialog by remember { mutableStateOf(false) }
 
@@ -163,8 +167,10 @@ fun SettingsScreen(
         PreferencesSection(
             appTheme = uiState.appTheme,
             appLogo = uiState.appLogo,
+            floatingButtonTimer = uiState.floatingButtonTimer,
             onThemeClick = { showThemeDialog = true },
             onLogoClick = { showLogoDialog = true },
+            onTimerClick = { showTimerDialog = true },
             onPermissionsClick = onNavigateToPermissions,
             onCategoriesClick = onNavigateToCategories,
             onAccountsClick = onNavigateToAccounts
@@ -244,6 +250,14 @@ fun SettingsScreen(
         )
     }
 
+    if (showTimerDialog) {
+        FloatingButtonTimerDialog(
+            currentTimer = uiState.floatingButtonTimer,
+            onSave = { viewModel.updateFloatingButtonTimer(it) },
+            onDismiss = { showTimerDialog = false }
+        )
+    }
+
     if (showClearDialog) {
         ClearDataDialog(
             onConfirm = { viewModel.deleteAll() },
@@ -316,8 +330,10 @@ private fun ProfileSection(userName: String, onClick: () -> Unit) {
 private fun PreferencesSection(
     appTheme: AppTheme,
     appLogo: AppLogo,
+    floatingButtonTimer: Float,
     onThemeClick: () -> Unit,
     onLogoClick: () -> Unit,
+    onTimerClick: () -> Unit,
     onPermissionsClick: () -> Unit,
     onCategoriesClick: () -> Unit,
     onAccountsClick: () -> Unit
@@ -337,6 +353,14 @@ private fun PreferencesSection(
                     icon = Icons.Rounded.AppShortcut,
                     title = "App Logo",
                     subtitle = appLogo.name.lowercase().replaceFirstChar { it.uppercase() }
+                )
+            }
+
+            MiniCard(onClick = onTimerClick) {
+                SettingRow(
+                    icon = Icons.Rounded.Timer,
+                    title = "Floating button timer",
+                    subtitle = String.format(java.util.Locale.US, "Auto-hide after %.1fs", floatingButtonTimer)
                 )
             }
 
@@ -945,4 +969,52 @@ private fun rememberLauncherPainter(logoRes: Int): androidx.compose.ui.graphics.
         drawable.draw(canvas)
         BitmapPainter(bitmap.asImageBitmap())
     }
+}
+
+@Composable
+private fun FloatingButtonTimerDialog(
+    currentTimer: Float,
+    onSave: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var tempTimer by remember { mutableStateOf(currentTimer.coerceIn(0.5f, 5.0f)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Floating Button Timer") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "Set the time before the floating button auto-hides due to inactivity. Interacting with the screen will make it reappear.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = String.format(java.util.Locale.US, "Timer: %.1fs", tempTimer),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+                Slider(
+                    value = tempTimer,
+                    onValueChange = { tempTimer = (Math.round(it * 2) / 2.0f).coerceIn(0.5f, 5.0f) },
+                    valueRange = 0.5f..5.0f,
+                    steps = 8,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(tempTimer)
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }

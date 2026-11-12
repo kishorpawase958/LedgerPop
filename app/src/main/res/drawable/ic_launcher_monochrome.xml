@@ -1,0 +1,63 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Cash bills sticking out (thinner lines and lighter 45% opacity) -->
+    <group android:alpha="0.45">
+        <!-- Left bill -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M43,43 L43,29 L51,29 L49.5,33 L46.5,33 L46.5,43 Z" />
+        <!-- Middle bill -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M51,43 L55.5,26 L64,28.5 L62,32.5 L58,31.2 L54.5,43 Z" />
+        <!-- Front angled bill -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M58,43 L68,27 L80,36 L74.5,43 L70.5,43 L74.8,37.2 L68.8,32.6 L62.2,43 Z" />
+        <!-- Center circle on front bill -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M69,38.5 m-1.6,0 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0" />
+    </group>
+
+    <!-- Wallet top hook & flap (reduced stroke width to 2.8) -->
+    <path
+        android:pathData="M40,38 L37,38 C34.5,38 33,39.8 33,42 C33,44.2 34.5,46 37,46 L68,46 C72,46 75,49 75,53 L75,56"
+        android:strokeWidth="2.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Wallet main body -->
+    <path
+        android:pathData="M33,42 L33,73 C33,77 36,80 40,80 L68,80 C72,80 75,77 75,73 L75,67"
+        android:strokeWidth="2.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Wallet clasp -->
+    <path
+        android:pathData="M78,56 L67,56 C64,56 62,58.5 62,61.5 C62,64.5 64,67 67,67 L78,67 C79.5,67 80.5,66 80.5,64.5 L80.5,58.5 C80.5,57 79.5,56 78,56 Z"
+        android:strokeWidth="2.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineJoin="round" />
+
+    <!-- Clasp button dot -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M67.5,61.5 m-1.5,0 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0" />
+
+    <!-- Rupee Symbol (₹) - reduced stroke width to 2.4 -->
+    <path
+        android:pathData="M44,53 L57,53 M44,58 L57,58 M48,53 C52,53 54,55.5 54,58.5 C54,61.5 51.5,64 47.5,64 L45.5,64 L54.5,73"
+        android:strokeWidth="2.4"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+</vector>

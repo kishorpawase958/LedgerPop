@@ -135,4 +135,7 @@ interface SmsTransactionDao {
 
     @Query("DELETE FROM sms_transactions WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Int>)
+
+    @Query("SELECT * FROM sms_transactions WHERE LOWER(body) LIKE '%' || LOWER(:keyword) || '%' ORDER BY transactionTime DESC")
+    suspend fun getTransactionsMatchingKeyword(keyword: String): List<SmsTransactionEntity>
 }

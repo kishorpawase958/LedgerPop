@@ -69,6 +69,7 @@ class BackupManager(private val context: Context) {
         prefsJson.put("backupFrequency", sharedPrefs.getString("backup_frequency", "Daily"))
         prefsJson.put("backupFolderUri", sharedPrefs.getString("backup_folder_uri", null))
         prefsJson.put("backupFolderName", sharedPrefs.getString("backup_folder_name", null))
+        prefsJson.put("floatingButtonTimer", sharedPrefs.getFloat("floating_button_timer", 3.0f))
         root.put("preferences", prefsJson)
 
         val budgetsJson = JSONObject()

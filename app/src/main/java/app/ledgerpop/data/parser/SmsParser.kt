@@ -27,7 +27,7 @@ object SmsParser {
     private val debitKeywords = listOf("dr.","debit", "debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "sent", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
     private val creditKeywords = listOf("cr.","credit", "credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
     
-    private val spamKeywords = listOf(
+    val defaultSpamKeywords = listOf(
         "recharge of","dear client","pay with points","to be","eligibility","upto","instant","start now","instant credit","instant cash","instant payment","instant loan","sale","bonus","schedule","voucher","activating","activate","expire","offer","coupon","shortlisted","kindly ignore if paid","code:","otp:","otp is", "otp for", "is your otp", "one time password for","password",
         "reminder", "cooling period", "generated", "request", "require", "allot", "disburse", "disbursal","claim your","free higher limit","limit increased","upgraded",
         "declined", "failed", "unsuccessful", "insufficient", "will be", "due", "free cash","top offer","best deal","exclusive offer","shortlisted","upi pin","pin setup","account setup","lenskart account","continue to","offer end","use code","signed up","get approved","get free","claim now","welcome bonus","welcome offer","set pin","set code",
@@ -38,6 +38,8 @@ object SmsParser {
         // Balance alerts / Summaries
         "view your last","increasing the limit","increase the limit","raise the limit"
     )
+
+    val spamKeywords = defaultSpamKeywords
 
     fun getStructure(body: String): String {
         return body.replace(Regex("""\d+"""), "#")
@@ -62,7 +64,12 @@ object SmsParser {
         return "${sender}_${rounded}_${amount}_${type}"
     }
 
-    fun parse(sender: String, body: String, ignoreSpamCheck: Boolean = false): ParsedSmsTransaction? {
+    fun parse(
+        sender: String,
+        body: String,
+        ignoreSpamCheck: Boolean = false,
+        customSpamKeywords: List<String> = emptyList()
+    ): ParsedSmsTransaction? {
         val text = body.replace("\n", " ").replace(Regex("""\s+"""), " ").trim()
         val lower = text.lowercase(Locale.getDefault())
 
@@ -71,7 +78,10 @@ object SmsParser {
         if (senderUpper.contains("POLICY") || senderUpper.contains("POLBAZ") || senderUpper.contains("POLBZR")) return null
 
         // Filter out spam or non-transactional messages
-        if (!ignoreSpamCheck && spamKeywords.any { lower.contains(it) }) return null
+        if (!ignoreSpamCheck) {
+            if (spamKeywords.any { lower.contains(it) }) return null
+            if (customSpamKeywords.any { it.isNotBlank() && lower.contains(it.lowercase(Locale.getDefault())) }) return null
+        }
 
         // Strictly determine transaction direction type first to validate intent
         val type = detectType(text) ?: if (ignoreSpamCheck) "DEBIT" else return null

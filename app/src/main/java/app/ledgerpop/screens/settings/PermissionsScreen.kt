@@ -34,10 +34,16 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
 @Composable
-fun PermissionsScreen(onBack: () -> Unit) {
+fun PermissionsScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(
+            LedgerPopDatabase.getInstance(LocalContext.current),
+            LocalContext.current
+        )
+    )
+) {
     val context = LocalContext.current
-    val db = remember { LedgerPopDatabase.getInstance(context) }
-    val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(db, context))
     val uiState by viewModel.uiState.collectAsState()
 
     // Permission Request Launchers

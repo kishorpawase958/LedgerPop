@@ -23,11 +23,14 @@ import app.ledgerpop.ui.viewmodel.SettingsViewModel
 
 @Composable
 fun AccountManagementScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(
+            LedgerPopDatabase.getInstance(LocalContext.current),
+            LocalContext.current
+        )
+    )
 ) {
-    val context = LocalContext.current
-    val db = remember { LedgerPopDatabase.getInstance(context) }
-    val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(db, context))
     val uiState by viewModel.uiState.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }

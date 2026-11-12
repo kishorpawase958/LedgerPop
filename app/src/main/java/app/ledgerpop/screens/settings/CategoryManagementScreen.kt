@@ -36,11 +36,15 @@ private data class CategoryDisplayInfo(
 
 @Composable
 fun CategoryManagementScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(
+            LedgerPopDatabase.getInstance(LocalContext.current),
+            LocalContext.current
+        )
+    )
 ) {
     val context = LocalContext.current
-    val db = remember { LedgerPopDatabase.getInstance(context) }
-    val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(db, context))
     val uiState by viewModel.uiState.collectAsState()
 
     val standardDebit = listOf(

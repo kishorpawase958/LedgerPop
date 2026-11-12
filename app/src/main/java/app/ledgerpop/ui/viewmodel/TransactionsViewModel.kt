@@ -3,12 +3,14 @@ package app.ledgerpop.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.data.repository.TransactionRepository
 import app.ledgerpop.ui.state.TrendSummary
 import app.ledgerpop.ui.state.TransactionsUiState
 import app.ledgerpop.ui.state.TransactionSortOrder
+import app.ledgerpop.utils.AmountUtils
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
@@ -85,11 +87,28 @@ class TransactionsViewModel(
             val query = f.query.trim()
             val isQueryBlank = query.isBlank()
             
+            val searchDateFormatter = if (!isQueryBlank) SimpleDateFormat("d MMM yyyy MMMM", Locale.getDefault()) else null
+            val queryTokens = if (isQueryBlank) emptyList() else query.split("\\s+".toRegex()).filter { it.isNotBlank() }
+            val cleanTokens = queryTokens.map { token ->
+                token.removePrefix("₹")
+                    .removePrefix("$")
+                    .removePrefix("INR")
+                    .removePrefix("inr")
+                    .removePrefix("Rs.")
+                    .removePrefix("rs.")
+                    .removePrefix("Rs")
+                    .removePrefix("rs")
+                    .trim()
+            }
+
             val baseFiltered = transactions.filter { txn ->
-                val matchesQuery = isQueryBlank ||
-                        txn.merchant.contains(query, ignoreCase = true) ||
-                        txn.sender.contains(query, ignoreCase = true) ||
-                        txn.body.contains(query, ignoreCase = true)
+                val matchesQuery = isQueryBlank || matchesUniversalSearch(
+                    txn = txn,
+                    query = query,
+                    queryTokens = queryTokens,
+                    cleanTokens = cleanTokens,
+                    dateFormatter = searchDateFormatter
+                )
 
                 if (!matchesQuery) return@filter false
 
@@ -329,6 +348,103 @@ class TransactionsViewModel(
     }
 
     companion object {
+        internal fun matchesUniversalSearch(
+            txn: SmsTransactionEntity,
+            query: String,
+            queryTokens: List<String> = query.trim().split("\\s+".toRegex()).filter { it.isNotBlank() },
+            cleanTokens: List<String> = queryTokens.map { token ->
+                token.removePrefix("₹")
+                    .removePrefix("$")
+                    .removePrefix("INR")
+                    .removePrefix("inr")
+                    .removePrefix("Rs.")
+                    .removePrefix("rs.")
+                    .removePrefix("Rs")
+                    .removePrefix("rs")
+                    .trim()
+            },
+            dateFormatter: SimpleDateFormat? = SimpleDateFormat("d MMM yyyy MMMM", Locale.getDefault())
+        ): Boolean {
+            val title = txn.merchant.ifBlank { txn.sender }
+            val normalizedMerchant = CategoryEngine.normalizeMerchant(txn.merchant)
+            val categoryEmoji = CategoryEngine.emoji(txn.category)
+            val rawAmount = AmountUtils.formatRaw(txn.amount)
+            val formattedAmount = AmountUtils.formatAmount(txn.amount)
+            val formattedCurrency = AmountUtils.formatWithCurrency(txn.amount)
+            val compactAmount = AmountUtils.formatCompact(txn.amount)
+            val amountStr = txn.amount.toString()
+
+            val origRaw = txn.originalAmount?.let { AmountUtils.formatRaw(it) }.orEmpty()
+            val origFormatted = txn.originalAmount?.let { AmountUtils.formatAmount(it) }.orEmpty()
+            val origCurrency = txn.originalAmount?.let { AmountUtils.formatWithCurrency(it) }.orEmpty()
+            val origCompact = txn.originalAmount?.let { AmountUtils.formatCompact(it) }.orEmpty()
+            val origStr = txn.originalAmount?.toString().orEmpty()
+
+            val dateFormatted = try {
+                dateFormatter?.format(Date(txn.transactionTime)).orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
+
+            val typeFriendly = when (txn.type.uppercase()) {
+                "DEBIT" -> "Debit Expense Dr"
+                "CREDIT" -> "Credit Income Cr"
+                else -> txn.type
+            }
+
+            val searchFields = listOf(
+                title,
+                txn.merchant,
+                normalizedMerchant,
+                txn.sender,
+                txn.body,
+                txn.note,
+                txn.category,
+                categoryEmoji,
+                txn.accountHint,
+                txn.bank,
+                typeFriendly,
+                dateFormatted,
+                rawAmount,
+                formattedAmount,
+                formattedCurrency,
+                compactAmount,
+                amountStr,
+                origRaw,
+                origFormatted,
+                origCurrency,
+                origCompact,
+                origStr,
+                "₹ Rs Rs. INR $"
+            )
+
+            // 1. Direct contiguous match across individual fields
+            if (searchFields.any { it.contains(query, ignoreCase = true) }) {
+                return true
+            }
+
+            // 2. Direct contiguous match across combined contents
+            val combinedContent = "$title ${txn.merchant} $normalizedMerchant ${txn.sender} ${txn.note} ${txn.category} ${txn.accountHint} ${txn.bank} ${txn.body}"
+            if (combinedContent.contains(query, ignoreCase = true)) {
+                return true
+            }
+
+            // 3. Multi-token match: Every whitespace-separated token in the query must match at least one field
+            if (queryTokens.isNotEmpty()) {
+                val allTokensMatch = queryTokens.indices.all { i ->
+                    val token = queryTokens[i]
+                    val clean = cleanTokens[i]
+                    searchFields.any { field ->
+                        field.contains(token, ignoreCase = true) ||
+                            (clean.isNotEmpty() && field.contains(clean, ignoreCase = true))
+                    }
+                }
+                if (allTokensMatch) return true
+            }
+
+            return false
+        }
+
         fun factory(database: LedgerPopDatabase): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
