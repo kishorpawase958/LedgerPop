@@ -13,8 +13,10 @@ import app.ledgerpop.data.local.AccountAliasDao
 import app.ledgerpop.data.local.AccountDao
 import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.local.SmartRuleDao
+import app.ledgerpop.data.local.SpamKeywordDao
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.parser.SmsParser
+import java.util.Locale
 
 data class ImportResult(
     val imported: Int = 0,
@@ -30,7 +32,8 @@ class SmsImporter(
     private val auditDao: SmsAuditDao,
     private val aliasDao: AccountAliasDao? = null,
     private val accountDao: AccountDao? = null,
-    private val smartRuleDao: SmartRuleDao? = null
+    private val smartRuleDao: SmartRuleDao? = null,
+    private val spamKeywordDao: SpamKeywordDao? = null
 ) {
 
     private val TAG = "LedgerPop"
@@ -96,6 +99,7 @@ class SmsImporter(
 
         // Pre-fetch all smart rules for batch processing
         val allRules = smartRuleDao?.getAll()?.groupBy { it.sender } ?: emptyMap()
+        val customSpamKeywords = spamKeywordDao?.getAllKeywordStrings() ?: emptyList()
         
         // Pre-fetch recent audit hash keys to avoid duplicate checks in DB loop
         val recentAuditHashes = auditDao.getAllSync().take(1000).map { it.hashKey }.toHashSet()
@@ -118,6 +122,31 @@ class SmsImporter(
             
             val senderKey: String = msg.sender
             val smartAction = getSmartAction(senderKey, msg.body, allRules[senderKey])
+
+            val customSpamMatch = if (smartAction != "ALWAYS_IMPORT") {
+                customSpamKeywords.firstOrNull { it.isNotBlank() && msg.body.lowercase(Locale.getDefault()).contains(it.lowercase(Locale.getDefault())) }
+            } else null
+
+            if (customSpamMatch != null) {
+                val reason = "Spam keyword matched: '$customSpamMatch'"
+                val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
+                if (!recentAuditHashes.contains(hashKey)) {
+                    auditToInsert.add(
+                        SmsAuditEntity(
+                            sender = msg.sender,
+                            body = msg.body,
+                            timestamp = msg.timestamp,
+                            status = "SKIPPED",
+                            skipReason = reason,
+                            parsedAmount = 0.0,
+                            parsedType = "",
+                            hashKey = hashKey
+                        )
+                    )
+                }
+                skipped++
+                continue
+            }
 
             val shouldProcess = when (smartAction) {
                 "ALWAYS_IMPORT" -> true
@@ -153,7 +182,7 @@ class SmsImporter(
                 continue
             }
 
-            val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
+            val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT", customSpamKeywords = customSpamKeywords)
             if (parsed == null) {
                 val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")
                 if (recentAuditHashes.contains(hashKey)) {
@@ -245,6 +274,28 @@ class SmsImporter(
 
     suspend fun importSingle(msg: SmsMessage): SmsTransactionEntity? {
         val smartAction = getSmartAction(msg.sender, msg.body)
+        val customSpamKeywords = spamKeywordDao?.getAllKeywordStrings() ?: emptyList()
+
+        val customSpamMatch = if (smartAction != "ALWAYS_IMPORT") {
+            customSpamKeywords.firstOrNull { it.isNotBlank() && msg.body.lowercase(Locale.getDefault()).contains(it.lowercase(Locale.getDefault())) }
+        } else null
+
+        if (customSpamMatch != null) {
+            val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "SKIPPED")
+            auditDao.insert(
+                SmsAuditEntity(
+                    sender = msg.sender,
+                    body = msg.body,
+                    timestamp = msg.timestamp,
+                    status = "SKIPPED",
+                    skipReason = "Spam keyword matched: '$customSpamMatch'",
+                    parsedAmount = 0.0,
+                    parsedType = "",
+                    hashKey = hashKey
+                )
+            )
+            return null
+        }
 
         val shouldProcess = when (smartAction) {
             "ALWAYS_IMPORT" -> true
@@ -287,7 +338,7 @@ class SmsImporter(
         }
 
         // The upgraded Parser now returns the beautifully formatted Account Name and Auto-Category
-        val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
+        val parsed = SmsParser.parse(msg.sender, msg.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT", customSpamKeywords = customSpamKeywords)
 
         if (parsed == null) {
             val hashKey = SmsParser.buildHashKey(msg.sender, msg.timestamp, 0.0, "PARSE_FAILED")

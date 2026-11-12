@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -67,7 +68,8 @@ class SettingsViewModel(
         backupFrequency = sharedPrefs.getString("backup_frequency", "Daily") ?: "Daily",
         backupFolderUri = sharedPrefs.getString("backup_folder_uri", null),
         backupFolderName = sharedPrefs.getString("backup_folder_name", null),
-        isFirstRun = sharedPrefs.getBoolean("is_first_run", true)
+        isFirstRun = sharedPrefs.getBoolean("is_first_run", true),
+        floatingButtonTimer = sharedPrefs.getFloat("floating_button_timer", 3.0f)
     ))
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
@@ -78,12 +80,57 @@ class SettingsViewModel(
         db.smsAuditDao(),
         db.accountAliasDao(),
         db.accountDao(),
-        db.smartRuleDao()
+        db.smartRuleDao(),
+        db.spamKeywordDao()
     )
 
     private val backupScheduler = BackupScheduler(appContext)
 
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+        when (key) {
+            "floating_button_timer" -> {
+                val timer = prefs.getFloat("floating_button_timer", 3.0f)
+                _uiState.update { it.copy(floatingButtonTimer = timer) }
+            }
+            "app_theme" -> {
+                val themeStr = prefs.getString("app_theme", AppTheme.AUTO.name) ?: AppTheme.AUTO.name
+                val theme = try { AppTheme.valueOf(themeStr) } catch (_: Exception) { AppTheme.AUTO }
+                _uiState.update { it.copy(appTheme = theme) }
+            }
+            "app_logo" -> {
+                val logoStr = prefs.getString("app_logo", AppLogo.DEFAULT.name) ?: AppLogo.DEFAULT.name
+                val logo = try { AppLogo.valueOf(logoStr) } catch (_: Exception) { AppLogo.DEFAULT }
+                _uiState.update { it.copy(appLogo = logo) }
+            }
+            "user_name" -> {
+                val name = prefs.getString("user_name", "User") ?: "User"
+                _uiState.update { it.copy(userName = name) }
+            }
+            "auto_backup_enabled" -> {
+                val enabled = prefs.getBoolean("auto_backup_enabled", false)
+                _uiState.update { it.copy(isAutoBackupEnabled = enabled) }
+            }
+            "backup_frequency" -> {
+                val freq = prefs.getString("backup_frequency", "Daily") ?: "Daily"
+                _uiState.update { it.copy(backupFrequency = freq) }
+            }
+            "backup_folder_uri" -> {
+                val uri = prefs.getString("backup_folder_uri", null)
+                _uiState.update { it.copy(backupFolderUri = uri) }
+            }
+            "backup_folder_name" -> {
+                val name = prefs.getString("backup_folder_name", null)
+                _uiState.update { it.copy(backupFolderName = name) }
+            }
+            "is_first_run" -> {
+                val isFirst = prefs.getBoolean("is_first_run", true)
+                _uiState.update { it.copy(isFirstRun = isFirst) }
+            }
+        }
+    }
+
     init {
+        sharedPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         refreshPermissions()
         // Observe transaction count
         viewModelScope.launch {
@@ -128,6 +175,12 @@ class SettingsViewModel(
     fun updateTheme(theme: AppTheme) {
         sharedPrefs.edit(commit = true) { putString("app_theme", theme.name) }
         _uiState.update { it.copy(appTheme = theme) }
+    }
+
+    fun updateFloatingButtonTimer(seconds: Float) {
+        val clamped = seconds.coerceIn(0.5f, 5.0f)
+        sharedPrefs.edit(commit = true) { putFloat("floating_button_timer", clamped) }
+        _uiState.update { it.copy(floatingButtonTimer = clamped) }
     }
 
     fun updateAppLogo(logo: AppLogo) {
@@ -539,6 +592,7 @@ class SettingsViewModel(
                     val backupFreq = prefs.optString("backupFrequency", "Daily")
                     val folderUri: String? = if (!prefs.isNull("backupFolderUri")) prefs.optString("backupFolderUri") else null
                     val folderName: String? = if (!prefs.isNull("backupFolderName")) prefs.optString("backupFolderName") else null
+                    val timerSec = if (prefs.has("floatingButtonTimer")) prefs.optDouble("floatingButtonTimer", 3.0).toFloat().coerceIn(0.5f, 5.0f) else 3.0f
                     
                     sharedPrefs.edit {
                         putString("app_theme", theme)
@@ -548,6 +602,7 @@ class SettingsViewModel(
                         putString("backup_frequency", backupFreq)
                         if (folderUri != null) putString("backup_folder_uri", folderUri)
                         if (folderName != null) putString("backup_folder_name", folderName)
+                        putFloat("floating_button_timer", timerSec)
                     }
                         
                     _uiState.update { it.copy(
@@ -557,7 +612,8 @@ class SettingsViewModel(
                         isAutoBackupEnabled = autoBackup,
                         backupFrequency = backupFreq,
                         backupFolderUri = folderUri,
-                        backupFolderName = folderName
+                        backupFolderName = folderName,
+                        floatingButtonTimer = timerSec
                     ) }
 
                     backupScheduler.scheduleBackup(autoBackup, backupFreq)
@@ -931,6 +987,11 @@ class SettingsViewModel(
         }?.let { return it }
         
         return csvAccount
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sharedPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
     }
 
     companion object {

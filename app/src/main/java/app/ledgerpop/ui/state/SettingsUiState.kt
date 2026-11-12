@@ -38,4 +38,5 @@ data class SettingsUiState(
     val backupFolderUri: String? = null,
     val backupFolderName: String? = null,
     val isFirstRun: Boolean = false,
+    val floatingButtonTimer: Float = 3.0f,
 )

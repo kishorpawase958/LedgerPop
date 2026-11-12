@@ -14,9 +14,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CustomCategoryEntity::class,
         AccountEntity::class,
         AccountAliasEntity::class,
-        SmartRuleEntity::class
+        SmartRuleEntity::class,
+        SpamKeywordEntity::class
     ],
-    version = 13, // bumped from 12
+    version = 14,
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -27,8 +28,29 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun accountAliasDao(): AccountAliasDao
     abstract fun smartRuleDao(): SmartRuleDao
+    abstract fun spamKeywordDao(): SpamKeywordDao
 
     companion object {
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `spam_keywords` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `keyword` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_spam_keywords_keyword` ON `spam_keywords` (`keyword`)")
+                
+                // Seed default spam keywords into Room database
+                val now = System.currentTimeMillis()
+                app.ledgerpop.data.parser.SmsParser.defaultSpamKeywords.forEach { kw ->
+                    val escapedKw = kw.replace("'", "''")
+                    db.execSQL("INSERT OR IGNORE INTO `spam_keywords` (`keyword`, `createdAt`) VALUES ('$escapedKw', $now)")
+                }
+            }
+        }
+
         private val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Drop the unique index on sms_audit.hashKey
@@ -133,7 +155,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
                     LedgerPopDatabase::class.java,
                     "ledgerpop_db"
                 )
-                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }

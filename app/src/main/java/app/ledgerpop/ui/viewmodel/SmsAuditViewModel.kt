@@ -7,12 +7,14 @@ import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmartRuleEntity
 import app.ledgerpop.data.local.SmsAuditEntity
 import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.data.local.SpamKeywordEntity
 import app.ledgerpop.data.category.CategoryEngine
 import app.ledgerpop.data.local.AccountEntity
 import app.ledgerpop.data.parser.SmsParser
 import app.ledgerpop.data.sms.SmsFilter
 import app.ledgerpop.ui.state.AuditFilter
 import app.ledgerpop.ui.state.SmsAuditUiState
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,7 @@ class SmsAuditViewModel(
     private val smartRuleDao = database.smartRuleDao()
     private val aliasDao = database.accountAliasDao()
     private val accountDao = database.accountDao()
+    private val spamKeywordDao = database.spamKeywordDao()
 
     private val _uiState = MutableStateFlow(SmsAuditUiState(isLoading = true))
     val uiState: StateFlow<SmsAuditUiState> = _uiState.asStateFlow()
@@ -38,6 +41,20 @@ class SmsAuditViewModel(
     val events = _events.asSharedFlow()
 
     init {
+        viewModelScope.launch {
+            if (spamKeywordDao.getKeywordsCount() == 0) {
+                spamKeywordDao.insertAll(
+                    SmsParser.defaultSpamKeywords.map { SpamKeywordEntity(keyword = it) }
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            spamKeywordDao.getAllKeywords().collect { keywords ->
+                _uiState.update { it.copy(spamKeywords = keywords) }
+            }
+        }
+
         viewModelScope.launch {
             auditDao.getAll().collect { entries ->
                 val imported = entries.count { it.status == "IMPORTED" }
@@ -547,6 +564,196 @@ class SmsAuditViewModel(
         return CategoryEngine.categorize(merchant, body, sender, type = type)
     }
 
+    // ── Spam Keywords Management & Retroactive Audit ──────────────────────────
+
+    fun toggleSpamKeywordsSection() {
+        _uiState.update { it.copy(showSpamKeywordsSection = !it.showSpamKeywordsSection) }
+    }
+
+    fun showAddSpamKeywordDialog() {
+        _uiState.update { it.copy(showAddSpamKeywordDialog = true) }
+    }
+
+    fun hideAddSpamKeywordDialog() {
+        _uiState.update { it.copy(showAddSpamKeywordDialog = false) }
+    }
+
+    fun addSpamKeyword(keywordInput: String) {
+        val cleanKeyword = keywordInput.trim()
+        if (cleanKeyword.isBlank()) {
+            viewModelScope.launch { _events.emit("Keyword cannot be empty") }
+            return
+        }
+
+        viewModelScope.launch {
+            if (spamKeywordDao.exists(cleanKeyword) > 0) {
+                _events.emit("Keyword '$cleanKeyword' already exists")
+                return@launch
+            }
+
+            spamKeywordDao.insert(SpamKeywordEntity(keyword = cleanKeyword))
+
+            // Query existing imported transactions matching this keyword
+            val matchedTxns = transactionDao.getTransactionsMatchingKeyword(cleanKeyword)
+
+            if (matchedTxns.isNotEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        showAddSpamKeywordDialog = false,
+                        showRetroactiveSpamDialog = true,
+                        retroactiveSpamKeyword = cleanKeyword,
+                        matchedSpamTransactions = matchedTxns,
+                        selectedSpamTxnIds = matchedTxns.map { txn -> txn.id }.toSet()
+                    )
+                }
+                _events.emit("Added '$cleanKeyword'. Found ${matchedTxns.size} matching transaction(s).")
+            } else {
+                _uiState.update { it.copy(showAddSpamKeywordDialog = false) }
+                _events.emit("Added keyword '$cleanKeyword'.")
+            }
+        }
+    }
+
+    fun showEditSpamKeywordDialog(entity: SpamKeywordEntity) {
+        _uiState.update {
+            it.copy(
+                showEditSpamKeywordDialog = true,
+                editingSpamKeyword = entity
+            )
+        }
+    }
+
+    fun hideEditSpamKeywordDialog() {
+        _uiState.update {
+            it.copy(
+                showEditSpamKeywordDialog = false,
+                editingSpamKeyword = null
+            )
+        }
+    }
+
+    fun editSpamKeyword(entity: SpamKeywordEntity, newKeywordInput: String) {
+        val cleanKeyword = newKeywordInput.trim()
+        if (cleanKeyword.isBlank()) {
+            viewModelScope.launch { _events.emit("Keyword cannot be empty") }
+            return
+        }
+
+        viewModelScope.launch {
+            if (!cleanKeyword.equals(entity.keyword, ignoreCase = true) && spamKeywordDao.exists(cleanKeyword) > 0) {
+                _events.emit("Keyword '$cleanKeyword' already exists")
+                return@launch
+            }
+
+            val updatedEntity = entity.copy(keyword = cleanKeyword)
+            spamKeywordDao.update(updatedEntity)
+            hideEditSpamKeywordDialog()
+
+            // Perform retroactive scan for cleanKeyword
+            val matchedTxns = transactionDao.getTransactionsMatchingKeyword(cleanKeyword)
+            if (matchedTxns.isNotEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        showRetroactiveSpamDialog = true,
+                        retroactiveSpamKeyword = cleanKeyword,
+                        matchedSpamTransactions = matchedTxns,
+                        selectedSpamTxnIds = matchedTxns.map { txn -> txn.id }.toSet()
+                    )
+                }
+                _events.emit("Updated to '$cleanKeyword'. Found ${matchedTxns.size} matching transaction(s).")
+            } else {
+                _events.emit("Updated keyword to '$cleanKeyword'.")
+            }
+        }
+    }
+
+    fun deleteSpamKeyword(keywordEntity: SpamKeywordEntity) {
+        viewModelScope.launch {
+            spamKeywordDao.delete(keywordEntity)
+            _events.emit("Removed keyword '${keywordEntity.keyword}'")
+        }
+    }
+
+    fun restoreDefaultSpamKeywords() {
+        viewModelScope.launch {
+            val defaults = SmsParser.defaultSpamKeywords.map { SpamKeywordEntity(keyword = it) }
+            spamKeywordDao.insertAll(defaults)
+            _events.emit("Restored default system spam keywords.")
+        }
+    }
+
+    fun toggleRetroactiveSpamSelection(id: Int) {
+        _uiState.update { state ->
+            val newSelected = if (state.selectedSpamTxnIds.contains(id)) {
+                state.selectedSpamTxnIds - id
+            } else {
+                state.selectedSpamTxnIds + id
+            }
+            state.copy(selectedSpamTxnIds = newSelected)
+        }
+    }
+
+    fun selectAllRetroactiveSpam() {
+        _uiState.update { state ->
+            val allIds = state.matchedSpamTransactions.map { it.id }.toSet()
+            val allSelected = state.selectedSpamTxnIds.containsAll(allIds)
+            state.copy(selectedSpamTxnIds = if (allSelected) emptySet() else allIds)
+        }
+    }
+
+    fun hideRetroactiveSpamDialog() {
+        _uiState.update {
+            it.copy(
+                showRetroactiveSpamDialog = false,
+                matchedSpamTransactions = emptyList(),
+                selectedSpamTxnIds = emptySet(),
+                retroactiveSpamKeyword = ""
+            )
+        }
+    }
+
+    fun applyRetroactiveSpamAction(markAsWronglyImported: Boolean) {
+        val state = _uiState.value
+        val selectedIds = state.selectedSpamTxnIds
+        val keyword = state.retroactiveSpamKeyword
+
+        if (!markAsWronglyImported || selectedIds.isEmpty()) {
+            hideRetroactiveSpamDialog()
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val matchedToProcess = state.matchedSpamTransactions.filter { selectedIds.contains(it.id) }
+            val total = matchedToProcess.size
+
+            // Delete selected transactions from sms_transactions DB
+            transactionDao.deleteByIds(selectedIds.toList())
+
+            // Update corresponding audit entries
+            matchedToProcess.forEach { txn ->
+                val auditEntry = auditDao.getEntryByHash(txn.hashKey)
+                if (auditEntry != null) {
+                    auditDao.update(
+                        auditEntry.copy(
+                            status = "SKIPPED",
+                            skipReason = "Spam keyword matched: '$keyword'",
+                            parsedAmount = 0.0,
+                            parsedType = "",
+                            reportType = "FALSE_POSITIVE",
+                            reportNote = "Retroactively marked as wrongly imported via spam keyword '$keyword'",
+                            reportTimestamp = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
+
+            _uiState.update { it.copy(isLoading = false) }
+            _events.emit("Marked $total message(s) as wrongly imported.")
+            hideRetroactiveSpamDialog()
+        }
+    }
+
     // ── Reparse All ──────────────────────────────────────────────────────────
 
     fun reparseAll() {
@@ -575,14 +782,21 @@ class SmsAuditViewModel(
         val rules = smartRuleDao.getBySender(entry.sender)
         val smartAction = rules.find { it.bodyStructure == structure }?.ruleType
 
-        val shouldProcess = when (smartAction) {
-            "ALWAYS_IMPORT" -> true
-            "ALWAYS_SKIP" -> false
+        val customSpamKeywords = spamKeywordDao.getAllKeywordStrings()
+        val customSpamMatch = if (smartAction != "ALWAYS_IMPORT") {
+            customSpamKeywords.firstOrNull { it.isNotBlank() && entry.body.lowercase(Locale.getDefault()).contains(it.lowercase(Locale.getDefault())) }
+        } else null
+
+        val shouldProcess = when {
+            smartAction == "ALWAYS_IMPORT" -> true
+            smartAction == "ALWAYS_SKIP" -> false
+            customSpamMatch != null -> false
             else -> SmsFilter.shouldProcess(entry.sender, entry.body)
         }
-        val reason = when (smartAction) {
-            "ALWAYS_IMPORT" -> "Smart Rule: ALWAYS_IMPORT"
-            "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
+        val reason = when {
+            smartAction == "ALWAYS_IMPORT" -> "Smart Rule: ALWAYS_IMPORT"
+            smartAction == "ALWAYS_SKIP" -> "Smart Rule: ALWAYS_SKIP"
+            customSpamMatch != null -> "Spam keyword matched: '$customSpamMatch'"
             else -> SmsFilter.skipReason(entry.sender, entry.body)
         }
 
@@ -616,7 +830,7 @@ class SmsAuditViewModel(
             return oldStatus != "SKIPPED"
         }
 
-        val parsed = SmsParser.parse(entry.sender, entry.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT")
+        val parsed = SmsParser.parse(entry.sender, entry.body, ignoreSpamCheck = smartAction == "ALWAYS_IMPORT", customSpamKeywords = customSpamKeywords)
         if (parsed == null) {
             val newHashKey = SmsParser.buildHashKey(entry.sender, entry.timestamp, 0.0, "PARSE_FAILED")
             if (entry.status == "IMPORTED") {

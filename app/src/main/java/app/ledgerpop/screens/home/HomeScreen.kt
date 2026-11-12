@@ -49,6 +49,9 @@ import app.ledgerpop.ui.viewmodel.HomeViewModel
 import app.ledgerpop.utils.AmountUtils
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import androidx.compose.animation.*
+import app.ledgerpop.ui.components.rememberFloatingButtonTimerState
+import app.ledgerpop.ui.components.trackInteractionForFloatingButton
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -56,6 +59,7 @@ import java.util.Locale
 
 @Composable
 fun HomeScreen(
+    floatingButtonTimer: Float? = null,
     onNavigateToTransactions: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -75,6 +79,11 @@ fun HomeScreen(
     var quickCategoryTxn by remember { mutableStateOf<SmsTransactionEntity?>(null) }
     var showAddSheet by remember { mutableStateOf(false) }
 
+    val fabTimerState = rememberFloatingButtonTimerState(
+        timerSeconds = floatingButtonTimer,
+        isMenuOpen = showAddSheet
+    )
+
     if (uiState.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(strokeWidth = 3.dp)
@@ -86,6 +95,7 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .trackInteractionForFloatingButton(fabTimerState)
             .hazeSource(state = hazeState)
             .statusBarsPadding()
     ) {
@@ -195,20 +205,26 @@ fun HomeScreen(
             }
         }
 
-        FloatingActionButton(
-            onClick = { showAddSheet = true },
+        AnimatedVisibility(
+            visible = fabTimerState.isVisible,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 135.dp),
-            containerColor = accentColor,
-            contentColor = Color.White,
-            shape = RoundedCornerShape(18.dp)
+                .padding(end = 24.dp, bottom = 135.dp)
         ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = "Add",
-                modifier = Modifier.size(28.dp)
-            )
+            FloatingActionButton(
+                onClick = { showAddSheet = true },
+                containerColor = accentColor,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = "Add",
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
     }
 
