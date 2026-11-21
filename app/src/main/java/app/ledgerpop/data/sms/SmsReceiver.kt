@@ -54,7 +54,8 @@ class SmsReceiver : BroadcastReceiver() {
                         auditDao = auditDao,
                         aliasDao = aliasDao,
                         accountDao = accountDao,
-                        smartRuleDao = smartRuleDao
+                        smartRuleDao = smartRuleDao,
+                        spamKeywordDao = db.spamKeywordDao()
                     )
 
                     val entity = importer.importSingle(msg)

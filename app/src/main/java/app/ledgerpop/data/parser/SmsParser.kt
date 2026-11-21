@@ -27,7 +27,7 @@ object SmsParser {
     private val debitKeywords = listOf("dr.","debit", "debited", "spent", "spend", "paid", "payment", "purchase", "trf to", "sent to", "sent", "withdrawal", "withdrawn", "txn of", "txn", "transaction")
     private val creditKeywords = listOf("cr.","credit", "credited", "received", "refund", "added to", "deposited", "transfer from", "trf from")
     
-    private val spamKeywords = listOf(
+    val defaultSpamKeywords = listOf(
         "recharge of","dear client","pay with points","to be","eligibility","upto","instant","start now","instant credit","instant cash","instant payment","instant loan","sale","bonus","schedule","voucher","activating","activate","expire","offer","coupon","shortlisted","kindly ignore if paid","code:","otp:","otp is", "otp for", "is your otp", "one time password for","password",
         "reminder", "cooling period", "generated", "request", "require", "allot", "disburse", "disbursal","claim your","free higher limit","limit increased","upgraded",
         "declined", "failed", "unsuccessful", "insufficient", "will be", "due", "free cash","top offer","best deal","exclusive offer","shortlisted","upi pin","pin setup","account setup","lenskart account","continue to","offer end","use code","signed up","get approved","get free","claim now","welcome bonus","welcome offer","set pin","set code",
@@ -38,6 +38,8 @@ object SmsParser {
         // Balance alerts / Summaries
         "view your last","increasing the limit","increase the limit","raise the limit"
     )
+
+    val spamKeywords = defaultSpamKeywords
 
     fun getStructure(body: String): String {
         return body.replace(Regex("""\d+"""), "#")
@@ -62,7 +64,12 @@ object SmsParser {
         return "${sender}_${rounded}_${amount}_${type}"
     }
 
-    fun parse(sender: String, body: String, ignoreSpamCheck: Boolean = false): ParsedSmsTransaction? {
+    fun parse(
+        sender: String,
+        body: String,
+        ignoreSpamCheck: Boolean = false,
+        customSpamKeywords: List<String> = emptyList()
+    ): ParsedSmsTransaction? {
         val text = body.replace("\n", " ").replace(Regex("""\s+"""), " ").trim()
         val lower = text.lowercase(Locale.getDefault())
 
@@ -71,7 +78,10 @@ object SmsParser {
         if (senderUpper.contains("POLICY") || senderUpper.contains("POLBAZ") || senderUpper.contains("POLBZR")) return null
 
         // Filter out spam or non-transactional messages
-        if (!ignoreSpamCheck && spamKeywords.any { lower.contains(it) }) return null
+        if (!ignoreSpamCheck) {
+            if (spamKeywords.any { lower.contains(it) }) return null
+            if (customSpamKeywords.any { it.isNotBlank() && lower.contains(it.lowercase(Locale.getDefault())) }) return null
+        }
 
         // Strictly determine transaction direction type first to validate intent
         val type = detectType(text) ?: if (ignoreSpamCheck) "DEBIT" else return null
@@ -131,7 +141,7 @@ object SmsParser {
             Regex("""(?i)[-\s]([A-Z]{4}N\d{7,15})(?:\.|\s|$)"""),
             Regex("""(?i)No\.\s*([A-Z0-9]{8,20})"""),
             Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI)/([A-Z0-9]{8,22})/(?:[A-Z0-9\s]{2,40})?"""),
-            Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI|UTR|REF)[:\-\s/]+([A-Z0-9]{10,22})""")
+            Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI|MB|UTR|REF)[:\-\s/]+([A-Z0-9]{10,22})""")
         )
         for (pattern in patterns) {
             val match = pattern.find(text)
@@ -169,8 +179,8 @@ object SmsParser {
         
         if (analyticalText.contains("credited") || analyticalText.contains("received")) return "CREDIT"
 
-        val hasDebit = debitKeywords.any { analyticalText.contains(it) }
-        val hasCredit = creditKeywords.any { analyticalText.contains(it) }
+        val hasDebit = debitKeywords.any { analyticalText.contains(it) } || Regex("""\bdr\.?\b""", RegexOption.IGNORE_CASE).containsMatchIn(analyticalText)
+        val hasCredit = creditKeywords.any { analyticalText.contains(it) } || Regex("""\bcr\.?\b""", RegexOption.IGNORE_CASE).containsMatchIn(analyticalText)
 
         return when {
             hasDebit && !hasCredit -> "DEBIT"
@@ -179,7 +189,7 @@ object SmsParser {
         }
     }
 
-    private val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for any queries|more info|any query|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|not|not\s+u|not\s+you|if\s+not|to\s+dispute|to\s+raise|fvg|favoring|favouring|sms|block|call|report)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))[.?!;:]+(?!\d)\s*|$)"""
+    private val lookahead = """(?=[,\s]+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for any queries|more info|any query|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|not|not\s+u|not\s+you|if\s+not|to\s+dispute|to\s+raise|fvg|fv|favoring|favouring|sms|block|call|report)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))[.,?!;:]+(?!\d)\s*|$)"""
     private val mChars = """A-Za-z0-9\s.&'/\-@*,"""
 
     private val merchantPatterns = listOf(
@@ -199,7 +209,7 @@ object SmsParser {
         Regex("""(?i)Info\s*[:\-]\s*([A-Z0-9]{10,22})$lookahead"""),
         
         // --- Legacy patterns continue standard extraction without regressions ---
-        Regex("""(?i)(?:fvg|favoring|favouring)[:\-]\s*([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)\b(?:fvg|fv|favoring|favouring)\b[:\-.]?\s*([$mChars]{2,100}?)$lookahead"""),
         Regex("""(?i)Transferred to\s+([$mChars]{2,100}?)$lookahead"""),
         Regex("""(?i)(?:for|towards)\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at|subscription\s+at)\s+([$mChars]{2,100}?)$lookahead"""),
         Regex("""(?i)spent\s+at\s+([$mChars]{2,100}?)$lookahead"""),
@@ -226,7 +236,7 @@ object SmsParser {
         for (pattern in merchantPatterns) {
             val matches = pattern.findAll(text)
             for (match in matches) {
-                var merchant = match.groupValues.getOrNull(1)?.trim()?.trimEnd(';', '.', ':', '-') ?: ""
+                var merchant = match.groupValues.getOrNull(1)?.trim()?.trimEnd(';', '.', ':', '-', ',') ?: ""
                 if (merchant.length <= 2) continue
 
                 // Clean up technical prefixes like NEFT Cr-IFSC- or IMPS-
@@ -293,8 +303,8 @@ object SmsParser {
                     candidates.add(match.range.first to merchant)
                 }
             }
-            // Optimization: If we find a high-priority merchant (first 5 patterns), we stop searching
-            if (candidates.isNotEmpty() && merchantPatterns.indexOf(pattern) < 5) break
+            // Optimization: If we find a high-priority merchant (first 6 patterns), we stop searching
+            if (candidates.isNotEmpty() && merchantPatterns.indexOf(pattern) < 6) break
         }
 
         if (candidates.isNotEmpty()) {

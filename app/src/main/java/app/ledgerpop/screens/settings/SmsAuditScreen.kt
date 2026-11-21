@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.ledgerpop.data.local.LedgerPopDatabase
 import app.ledgerpop.data.local.SmsAuditEntity
+import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.data.local.SpamKeywordEntity
+import app.ledgerpop.data.parser.SmsParser
 import app.ledgerpop.ui.state.AuditFilter
 import app.ledgerpop.ui.viewmodel.SmsAuditViewModel
 import app.ledgerpop.utils.AmountUtils
@@ -98,6 +101,41 @@ fun SmsAuditScreen(onBack: () -> Unit) {
             onToggleSelection = { viewModel.toggleSimilarSelection(it) },
             onConfirm = { viewModel.applyBatchClear() },
             onDismiss = { viewModel.hideClearSimilarDialog() }
+        )
+    }
+
+    // Add Spam Keyword Dialog
+    if (uiState.showAddSpamKeywordDialog) {
+        AddSpamKeywordDialog(
+            onConfirm = { keyword -> viewModel.addSpamKeyword(keyword) },
+            onDismiss = { viewModel.hideAddSpamKeywordDialog() }
+        )
+    }
+
+    // Edit Spam Keyword Dialog
+    if (uiState.showEditSpamKeywordDialog && uiState.editingSpamKeyword != null) {
+        val entity = uiState.editingSpamKeyword!!
+        EditSpamKeywordDialog(
+            initialKeyword = entity.keyword,
+            onConfirm = { newKeyword -> viewModel.editSpamKeyword(entity, newKeyword) },
+            onDelete = {
+                viewModel.deleteSpamKeyword(entity)
+                viewModel.hideEditSpamKeywordDialog()
+            },
+            onDismiss = { viewModel.hideEditSpamKeywordDialog() }
+        )
+    }
+
+    // Retroactive Spam Bulk Update Dialog
+    if (uiState.showRetroactiveSpamDialog) {
+        RetroactiveSpamBulkDialog(
+            keyword = uiState.retroactiveSpamKeyword,
+            matchedTransactions = uiState.matchedSpamTransactions,
+            selectedIds = uiState.selectedSpamTxnIds,
+            onToggleSelection = { viewModel.toggleRetroactiveSpamSelection(it) },
+            onSelectAll = { viewModel.selectAllRetroactiveSpam() },
+            onConfirmMarkWronglyImported = { viewModel.applyRetroactiveSpamAction(true) },
+            onDismiss = { viewModel.applyRetroactiveSpamAction(false) }
         )
     }
 
@@ -199,6 +237,14 @@ fun SmsAuditScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = { viewModel.toggleSpamKeywordsSection() }) {
+                    Icon(
+                        Icons.Rounded.Block,
+                        contentDescription = "Spam Keywords",
+                        modifier = Modifier.size(22.dp),
+                        tint = if (uiState.showSpamKeywordsSection || uiState.spamKeywords.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(onClick = { viewModel.reparseAll() }) {
                     Icon(
                         Icons.Rounded.Refresh,
@@ -220,6 +266,21 @@ fun SmsAuditScreen(onBack: () -> Unit) {
                     )
                 }
             }
+        }
+
+        // ── Spam Keywords Management Section ──────────────────────────────────
+        AnimatedVisibility(
+            visible = uiState.showSpamKeywordsSection,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            SpamKeywordsCard(
+                keywords = uiState.spamKeywords,
+                onAddClick = { viewModel.showAddSpamKeywordDialog() },
+                onEditClick = { viewModel.showEditSpamKeywordDialog(it) },
+                onDeleteClick = { viewModel.deleteSpamKeyword(it) },
+                onRestoreDefaultsClick = { viewModel.restoreDefaultSpamKeywords() }
+            )
         }
 
         if (uiState.isLoading && uiState.loadingProgress == null) {
@@ -1132,4 +1193,369 @@ private fun SimilarEntriesDialog(
             }
         }
     )
+}
+
+// ── Add Spam Keyword Dialog ───────────────────────────────────────────────────
+
+@Composable
+private fun AddSpamKeywordDialog(
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var keywordText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                "Add Spam Keyword",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Messages containing this keyword will be excluded from automatic transaction import.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = keywordText,
+                    onValueChange = { keywordText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Spam keyword or phrase") },
+                    placeholder = { Text("e.g. reward points, loan offer") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(keywordText) },
+                enabled = keywordText.isNotBlank(),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Add & Scan")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+// ── Retroactive Spam Bulk Update Dialog ────────────────────────────────────────
+
+@Composable
+private fun RetroactiveSpamBulkDialog(
+    keyword: String,
+    matchedTransactions: List<SmsTransactionEntity>,
+    selectedIds: Set<Int>,
+    onToggleSelection: (Int) -> Unit,
+    onSelectAll: () -> Unit,
+    onConfirmMarkWronglyImported: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val locale = LocalConfiguration.current.locales[0]
+    val sdf = remember(locale) { SimpleDateFormat("d MMM yyyy, h:mm a", locale) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Column {
+                Text(
+                    "Spam Keyword Matched",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Found ${matchedTransactions.size} imported transaction(s) matching '$keyword'",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Would you like to mark these existing transactions as wrongly imported and remove them from your transactions?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${selectedIds.size} of ${matchedTransactions.size} selected",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TextButton(onClick = onSelectAll) {
+                        Text(if (selectedIds.size == matchedTransactions.size) "Deselect all" else "Select all")
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    items(matchedTransactions) { txn ->
+                        val isSelected = selectedIds.contains(txn.id)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggleSelection(txn.id) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = { onToggleSelection(txn.id) }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = txn.merchant.ifBlank { txn.sender },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "₹${AmountUtils.formatAmount(txn.amount)} · ${sdf.format(Date(txn.transactionTime))}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = txn.body.take(80) + if (txn.body.length > 80) "…" else "",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmMarkWronglyImported,
+                enabled = selectedIds.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Mark as Wrongly Imported (${selectedIds.size})")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss / Keep")
+            }
+        }
+    )
+}
+
+// ── Edit Spam Keyword Dialog ──────────────────────────────────────────────────
+
+@Composable
+private fun EditSpamKeywordDialog(
+    initialKeyword: String,
+    onConfirm: (String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var keywordText by remember { mutableStateOf(initialKeyword) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        title = {
+            Text(
+                "Edit Spam Keyword",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Modify this keyword filter. Messages matching this keyword will be excluded from automatic transaction import.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedTextField(
+                    value = keywordText,
+                    onValueChange = { keywordText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Spam keyword or phrase") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None)
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(
+                        Icons.Rounded.Delete,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete")
+                }
+                Button(
+                    onClick = { onConfirm(keywordText) },
+                    enabled = keywordText.isNotBlank(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Save & Scan")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+// ── Spam Keywords Card ────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SpamKeywordsCard(
+    keywords: List<SpamKeywordEntity>,
+    onAddClick: () -> Unit,
+    onEditClick: (SpamKeywordEntity) -> Unit,
+    onDeleteClick: (SpamKeywordEntity) -> Unit,
+    onRestoreDefaultsClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Block,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        "Spam Keywords (${keywords.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(
+                        onClick = onRestoreDefaultsClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.RestartAlt,
+                            contentDescription = "Restore Default Keywords",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = onAddClick,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Add", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            Text(
+                "Tap any keyword chip to edit or delete it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (keywords.isEmpty()) {
+                Text(
+                    "No spam keywords configured. Tap 'Add' to add custom filters or the restore icon to reload system defaults.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    keywords.forEach { item ->
+                        InputChip(
+                            selected = false,
+                            onClick = { onEditClick(item) },
+                            label = {
+                                Text(
+                                    item.keyword,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = "Delete keyword",
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { onDeleteClick(item) }
+                                )
+                            },
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

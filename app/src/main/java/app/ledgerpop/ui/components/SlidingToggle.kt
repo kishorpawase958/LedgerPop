@@ -6,7 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.sp
 
 @Composable
@@ -36,9 +37,9 @@ fun SlidingToggle(
         modifier = modifier
             .width(112.dp)
             .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(CircleShape)
             .background(switchBgColor)
-            .border(1.dp, themeColor.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+            .border(1.dp, themeColor.copy(alpha = 0.4f), CircleShape)
             .clickable { onToggle(!isSelected) }
             .padding(4.dp)
     ) {
@@ -48,7 +49,7 @@ fun SlidingToggle(
                 .offset { IntOffset(x = thumbOffset.roundToPx(), y = 0) }
                 .fillMaxHeight()
                 .width(52.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(CircleShape)
                 .background(themeColor)
         )
 

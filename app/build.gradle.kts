@@ -15,8 +15,8 @@ android {
         minSdk = 31
         //noinspection OldTargetApi
         targetSdk = 37
-        versionCode = 24           // ← increase by 1 from last time (was 23)
-        versionName = "4.6"     // ← change from "4.5" to "4.6"
+        versionCode = 26           // ← increase by 1 from last time (was 25)
+        versionName = "4.8"     // ← change from "4.7" to "4.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -76,6 +76,7 @@ android {
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)

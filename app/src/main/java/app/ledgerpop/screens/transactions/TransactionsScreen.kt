@@ -52,12 +52,15 @@ import app.ledgerpop.ui.theme.Purple700
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
+import app.ledgerpop.ui.components.rememberFloatingButtonTimerState
+import app.ledgerpop.ui.components.trackInteractionForFloatingButton
 import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionsScreen(
+    floatingButtonTimer: Float? = null,
     initialTransactionId: Int? = null,
     onClearInitialId: () -> Unit = {}
 ) {
@@ -139,13 +142,19 @@ fun TransactionsScreen(
     val density = LocalDensity.current
     
     // FAB and Action Offsets (Matching SpeedDialFab layout)
+    val fabTimerState = rememberFloatingButtonTimerState(
+        timerSeconds = floatingButtonTimer,
+        isMenuOpen = isFabExpanded || showAccountFilterPopup || showCategoryFilterPopup || showDatePicker || showAddSheet,
+        onHide = { isFabExpanded = false }
+    )
+
     // To align next to the main FAB '+', we use the FAB's vertical center as our anchor
     val fabCenterYOffset = with(density) { (-(135 + 28)).dp.roundToPx() }
     
     // We'll use a consistent Y offset for all popups to keep them "next to" the FAB
     val popupYOffset = fabCenterYOffset
 
-    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    Box(modifier = Modifier.fillMaxSize().trackInteractionForFloatingButton(fabTimerState).statusBarsPadding()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -528,7 +537,7 @@ fun TransactionsScreen(
 
         // ── Scroll to Top Button ──────────────────────────────────────────────────
         AnimatedVisibility(
-            visible = showScrollToTop,
+            visible = showScrollToTop && fabTimerState.isVisible,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically(),
             modifier = Modifier
@@ -551,40 +560,47 @@ fun TransactionsScreen(
         }
 
         // ── SpeedDial FAB ─────────────────────────────────────────────────────────────
-        SpeedDialFab(
-            isExpanded = isFabExpanded,
-            onExpandedChange = { isFabExpanded = it },
-            actions = listOf(
-                SpeedDialAction(
-                    icon = Icons.Rounded.AccountBalanceWallet,
-                    label = "Account",
-                    onClick = { showAccountFilterPopup = true }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.Category,
-                    label = "Category",
-                    onClick = { showCategoryFilterPopup = true }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.DateRange,
-                    label = "Date",
-                    onClick = { showDatePicker = true }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.Download,
-                    label = "Export",
-                    onClick = { viewModel.exportToCsv(context) }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.Add,
-                    label = "Add",
-                    onClick = { showAddSheet = true }
-                )
-            ),
+        AnimatedVisibility(
+            visible = fabTimerState.isVisible,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 135.dp)
-        )
+        ) {
+            SpeedDialFab(
+                isExpanded = isFabExpanded,
+                onExpandedChange = { isFabExpanded = it },
+                actions = listOf(
+                    SpeedDialAction(
+                        icon = Icons.Rounded.AccountBalanceWallet,
+                        label = "Account",
+                        onClick = { showAccountFilterPopup = true }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.Category,
+                        label = "Category",
+                        onClick = { showCategoryFilterPopup = true }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.DateRange,
+                        label = "Date",
+                        onClick = { showDatePicker = true }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.Download,
+                        label = "Export",
+                        onClick = { viewModel.exportToCsv(context) }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.Add,
+                        label = "Add",
+                        onClick = { showAddSheet = true }
+                    )
+                ),
+                modifier = Modifier
+            )
+        }
     }
 
     if (showAccountFilterPopup) {

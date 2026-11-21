@@ -52,6 +52,8 @@ import app.ledgerpop.ui.viewmodel.AnalyticsViewModel
 import app.ledgerpop.ui.viewmodel.DrillDownType
 import app.ledgerpop.screens.transactions.TransactionDetailScreen
 import app.ledgerpop.screens.transactions.QuickCategoryUpdateDialog
+import app.ledgerpop.ui.components.rememberFloatingButtonTimerState
+import app.ledgerpop.ui.components.trackInteractionForFloatingButton
 import app.ledgerpop.utils.AmountUtils
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -80,7 +82,9 @@ private val INCOME_COLORS = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AnalyticsScreen() {
+fun AnalyticsScreen(
+    floatingButtonTimer: Float? = null
+) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val locale = remember(configuration) { configuration.locales[0] }
@@ -116,6 +120,12 @@ fun AnalyticsScreen() {
     var showAccountFilterPopup by remember { mutableStateOf(false) }
     var showCategoryFilterPopup by remember { mutableStateOf(false) }
 
+    val fabTimerState = rememberFloatingButtonTimerState(
+        timerSeconds = floatingButtonTimer,
+        isMenuOpen = isFabExpanded || showAccountFilterPopup || showCategoryFilterPopup || showDatePickerState.value,
+        onHide = { isFabExpanded = false }
+    )
+
     if (uiState.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -123,7 +133,7 @@ fun AnalyticsScreen() {
         return
     }
 
-    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    Box(modifier = Modifier.fillMaxSize().trackInteractionForFloatingButton(fabTimerState).statusBarsPadding()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -178,7 +188,7 @@ fun AnalyticsScreen() {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 220.dp)
+                contentPadding = PaddingValues(bottom = 120.dp)
             ) {
                 // ── KPIs (Clickable) ──────────────────────────────────────────────
             item {
@@ -369,7 +379,7 @@ fun AnalyticsScreen() {
 
         // ── Scroll to Top Button ──────────────────────────────────────────────────
         AnimatedVisibility(
-            visible = showScrollToTop,
+            visible = showScrollToTop && fabTimerState.isVisible,
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically(),
             modifier = Modifier
@@ -392,35 +402,43 @@ fun AnalyticsScreen() {
         }
 
         // ── SpeedDial FAB ─────────────────────────────────────────────────────────────
-        SpeedDialFab(
-            isExpanded = isFabExpanded,
-            onExpandedChange = { isFabExpanded = it },
-            actions = listOf(
-
-                SpeedDialAction(
-                    icon = Icons.Rounded.AccountBalanceWallet,
-                    label = "Account",
-                    onClick = { showAccountFilterPopup = true }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.Category,
-                    label = "Category",
-                    onClick = { showCategoryFilterPopup = true }
-                ),
-                SpeedDialAction(
-                    icon = Icons.Rounded.DateRange,
-                    label = "Date",
-                    onClick = { showDatePickerState.value = true }
-                ),
-                SpeedDialAction(icon = Icons.Rounded.Download,
-                label = "Export",
-                onClick = { viewModel.exportToCsv(context) }
-                )
-            ),
+        AnimatedVisibility(
+            visible = fabTimerState.isVisible,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 135.dp)
-        )
+        ) {
+            SpeedDialFab(
+                isExpanded = isFabExpanded,
+                onExpandedChange = { isFabExpanded = it },
+                actions = listOf(
+
+                    SpeedDialAction(
+                        icon = Icons.Rounded.AccountBalanceWallet,
+                        label = "Account",
+                        onClick = { showAccountFilterPopup = true }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.Category,
+                        label = "Category",
+                        onClick = { showCategoryFilterPopup = true }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.DateRange,
+                        label = "Date",
+                        onClick = { showDatePickerState.value = true }
+                    ),
+                    SpeedDialAction(
+                        icon = Icons.Rounded.Download,
+                        label = "Export",
+                        onClick = { viewModel.exportToCsv(context) }
+                    )
+                ),
+                modifier = Modifier
+            )
+        }
     }
 
     if (showAccountFilterPopup) {

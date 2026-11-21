@@ -1,6 +1,8 @@
 package app.ledgerpop.ui.state
 
 import app.ledgerpop.data.local.SmsAuditEntity
+import app.ledgerpop.data.local.SmsTransactionEntity
+import app.ledgerpop.data.local.SpamKeywordEntity
 
 enum class AuditFilter { ALL, IMPORTED, SKIPPED, PARSE_FAILED, REPORTED }
 
@@ -32,6 +34,17 @@ data class SmsAuditUiState(
     val similarEntries: List<SmsAuditEntity> = emptyList(),
     val selectedSimilarIds: Set<Int> = emptySet(),
     val retroactiveReportType: String = "",
+
+    // Spam Keywords Management & Retroactive Audit
+    val spamKeywords: List<SpamKeywordEntity> = emptyList(),
+    val showAddSpamKeywordDialog: Boolean = false,
+    val showEditSpamKeywordDialog: Boolean = false,
+    val editingSpamKeyword: SpamKeywordEntity? = null,
+    val showSpamKeywordsSection: Boolean = false,
+    val showRetroactiveSpamDialog: Boolean = false,
+    val retroactiveSpamKeyword: String = "",
+    val matchedSpamTransactions: List<SmsTransactionEntity> = emptyList(),
+    val selectedSpamTxnIds: Set<Int> = emptySet(),
 
     val selectedAuditIds: Set<Int> = emptySet(),
     val isSelectionMode: Boolean = false,

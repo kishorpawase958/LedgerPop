@@ -6,7 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Menu
@@ -63,7 +63,7 @@ fun SpeedDialFab(
                         },
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = CircleShape
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp),
@@ -86,7 +86,7 @@ fun SpeedDialFab(
             onClick = { onExpandedChange(!isExpanded) },
             containerColor = if (isExpanded) MaterialTheme.colorScheme.surfaceVariant else accentColor,
             contentColor = if (isExpanded) MaterialTheme.colorScheme.onSurfaceVariant else Color.White,
-            shape = RoundedCornerShape(18.dp)
+            shape = CircleShape
         ) {
             Icon(
                 imageVector = if (isExpanded) Icons.Rounded.Close else mainIcon,

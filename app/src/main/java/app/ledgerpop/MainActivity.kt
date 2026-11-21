@@ -8,11 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Analytics
 import androidx.compose.material.icons.rounded.Home
@@ -38,6 +36,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +52,9 @@ import app.ledgerpop.screens.settings.SettingsScreen
 import app.ledgerpop.screens.settings.SmsAuditScreen
 import app.ledgerpop.screens.transactions.AddTransactionDialog
 import app.ledgerpop.screens.transactions.TransactionsScreen
+import app.ledgerpop.ui.components.LiquidGlassSurface
+import app.ledgerpop.ui.components.LocalHazeState
+import app.ledgerpop.ui.components.liquidGlassLens
 import app.ledgerpop.ui.theme.LedgerPopTheme
 import app.ledgerpop.ui.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -205,7 +208,8 @@ fun LedgerPopApp(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        CompositionLocalProvider(LocalHazeState provides hazeState) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             // Main Content Area that flows behind the floating navigation bar
             Box(
                 modifier = Modifier
@@ -227,6 +231,7 @@ fun LedgerPopApp(
 
                     composable(Screen.Home.route) {
                         HomeScreen(
+                            floatingButtonTimer = uiState.floatingButtonTimer,
                             onNavigateToTransactions = {
                                 navController.navigate(Screen.Transactions.createRoute()) {
                                     popUpTo(navController.graph.findStartDestination().id) {
@@ -248,6 +253,7 @@ fun LedgerPopApp(
                     ) { backStackEntry ->
                         val transactionId = backStackEntry.arguments?.getInt("id") ?: -1
                         TransactionsScreen(
+                            floatingButtonTimer = uiState.floatingButtonTimer,
                             initialTransactionId = if (transactionId != -1) transactionId else null,
                             onClearInitialId = {
                                 backStackEntry.arguments?.putInt("id", -1)
@@ -256,11 +262,14 @@ fun LedgerPopApp(
                     }
 
                     composable(Screen.Analytics.route) {
-                        AnalyticsScreen()
+                        AnalyticsScreen(
+                            floatingButtonTimer = uiState.floatingButtonTimer
+                        )
                     }
 
                     composable(Screen.Settings.route) {
                         SettingsScreen(
+                            viewModel = settingsViewModel,
                             onNavigateToSmsAudit = {
                                 navController.navigate(Screen.SmsAudit.route)
                             },
@@ -284,18 +293,21 @@ fun LedgerPopApp(
 
                     composable(Screen.Permissions.route) {
                         PermissionsScreen(
+                            viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
                     composable(Screen.Categories.route) {
                         CategoryManagementScreen(
+                            viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
                     composable(Screen.Accounts.route) {
                         AccountManagementScreen(
+                            viewModel = settingsViewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -311,41 +323,29 @@ fun LedgerPopApp(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 20.dp)
+
+                        .padding(horizontal = 36.dp, vertical = 20.dp)
                         .navigationBarsPadding(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Surface(
+                    LiquidGlassSurface(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .hazeEffect(
-                                state = hazeState,
-                                style = HazeDefaults.style(
-                                    backgroundColor = MaterialTheme.colorScheme.surface,
-                                    blurRadius = 20.dp,
-                                    tint = HazeDefaults.tint(MaterialTheme.colorScheme.surface.copy(alpha = 0.25f))
-                                )
-                            ),
-                        shape = RoundedCornerShape(24.dp),
-                        color = Color.Transparent,
-                        tonalElevation = 8.dp,
-                        border = androidx.compose.foundation.BorderStroke(
-                            0.5.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        )
+                            .widthIn(max = 380.dp)
+                            .height(72.dp),
+                        hazeState = hazeState,
+                        shape = CircleShape
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             bottomNavItems.forEach { item ->
                                 val selected = currentRoute == item.screen.route
                                 val contentColor by animateColorAsState(
-                                    targetValue = if (selected) MaterialTheme.colorScheme.primary 
+                                    targetValue = if (selected) MaterialTheme.colorScheme.primary
                                                  else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     label = "nav_item_color"
                                 )
@@ -353,9 +353,9 @@ fun LedgerPopApp(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(64.dp)
-                                        .padding(4.dp)
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .fillMaxHeight()
+                                        .padding(horizontal = 2.dp, vertical = 2.dp)
+                                        .clip(CircleShape)
                                         .clickable {
                                             if (!selected) {
                                                 val route = if (item.screen == Screen.Transactions) Screen.Transactions.createRoute() else item.screen.route
@@ -371,24 +371,11 @@ fun LedgerPopApp(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (selected) {
-                                        // The Glass Plate (Nested Haze Effect)
+                                        // The Glass Plate (Glossy Liquid Lens) with rounded pill shape
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .hazeEffect(
-                                                    state = hazeState,
-                                                    style = HazeDefaults.style(
-                                                        backgroundColor = MaterialTheme.colorScheme.surface,
-                                                        blurRadius = 15.dp,
-                                                        tint = HazeDefaults.tint(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                                                    )
-                                                )
-                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))
-                                                .border(
-                                                    0.5.dp,
-                                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                                    RoundedCornerShape(16.dp)
-                                                )
+                                                .liquidGlassLens(hazeState = hazeState)
                                         )
                                     }
 
@@ -400,8 +387,9 @@ fun LedgerPopApp(
                                             imageVector = item.icon,
                                             contentDescription = item.label,
                                             tint = contentColor,
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(30.dp)
                                         )
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = item.label,
                                             style = MaterialTheme.typography.labelSmall,
@@ -417,4 +405,5 @@ fun LedgerPopApp(
             }
         }
     }
+}
 }
