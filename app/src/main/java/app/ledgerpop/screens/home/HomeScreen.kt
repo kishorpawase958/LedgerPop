@@ -217,7 +217,7 @@ fun HomeScreen(
                 onClick = { showAddSheet = true },
                 containerColor = accentColor,
                 contentColor = Color.White,
-                shape = RoundedCornerShape(18.dp)
+                shape = CircleShape
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Add,

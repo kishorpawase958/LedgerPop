@@ -141,7 +141,7 @@ object SmsParser {
             Regex("""(?i)[-\s]([A-Z]{4}N\d{7,15})(?:\.|\s|$)"""),
             Regex("""(?i)No\.\s*([A-Z0-9]{8,20})"""),
             Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI)/([A-Z0-9]{8,22})/(?:[A-Z0-9\s]{2,40})?"""),
-            Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI|UTR|REF)[:\-\s/]+([A-Z0-9]{10,22})""")
+            Regex("""(?i)(?:NEFT|IMPS|RTGS|UPI|MB|UTR|REF)[:\-\s/]+([A-Z0-9]{10,22})""")
         )
         for (pattern in patterns) {
             val match = pattern.find(text)
@@ -179,8 +179,8 @@ object SmsParser {
         
         if (analyticalText.contains("credited") || analyticalText.contains("received")) return "CREDIT"
 
-        val hasDebit = debitKeywords.any { analyticalText.contains(it) }
-        val hasCredit = creditKeywords.any { analyticalText.contains(it) }
+        val hasDebit = debitKeywords.any { analyticalText.contains(it) } || Regex("""\bdr\.?\b""", RegexOption.IGNORE_CASE).containsMatchIn(analyticalText)
+        val hasCredit = creditKeywords.any { analyticalText.contains(it) } || Regex("""\bcr\.?\b""", RegexOption.IGNORE_CASE).containsMatchIn(analyticalText)
 
         return when {
             hasDebit && !hasCredit -> "DEBIT"
@@ -189,7 +189,7 @@ object SmsParser {
         }
     }
 
-    private val lookahead = """(?=\s+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for any queries|more info|any query|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|not|not\s+u|not\s+you|if\s+not|to\s+dispute|to\s+raise|fvg|favoring|favouring|sms|block|call|report)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))[.?!;:]+(?!\d)\s*|$)"""
+    private val lookahead = """(?=[,\s]+(?:on|via|with|using|ref|refno|from|upi|avl|bal|for any queries|more info|any query|card|a/c|under|chk|your|is|at|info|info-|to|inr|rs|₹|if|not|not\s+u|not\s+you|if\s+not|to\s+dispute|to\s+raise|fvg|fv|favoring|favouring|sms|block|call|report)\b|(?<!\b(?:Mr|Ms|Dr|Mrs|Shri|Smt))[.,?!;:]+(?!\d)\s*|$)"""
     private val mChars = """A-Za-z0-9\s.&'/\-@*,"""
 
     private val merchantPatterns = listOf(
@@ -209,7 +209,7 @@ object SmsParser {
         Regex("""(?i)Info\s*[:\-]\s*([A-Z0-9]{10,22})$lookahead"""),
         
         // --- Legacy patterns continue standard extraction without regressions ---
-        Regex("""(?i)(?:fvg|favoring|favouring)[:\-]\s*([$mChars]{2,100}?)$lookahead"""),
+        Regex("""(?i)\b(?:fvg|fv|favoring|favouring)\b[:\-.]?\s*([$mChars]{2,100}?)$lookahead"""),
         Regex("""(?i)Transferred to\s+([$mChars]{2,100}?)$lookahead"""),
         Regex("""(?i)(?:for|towards)\s+(?:payment\s+to|order\s+at|trip\s+at|purchase\s+at|subscription\s+at)\s+([$mChars]{2,100}?)$lookahead"""),
         Regex("""(?i)spent\s+at\s+([$mChars]{2,100}?)$lookahead"""),
@@ -236,7 +236,7 @@ object SmsParser {
         for (pattern in merchantPatterns) {
             val matches = pattern.findAll(text)
             for (match in matches) {
-                var merchant = match.groupValues.getOrNull(1)?.trim()?.trimEnd(';', '.', ':', '-') ?: ""
+                var merchant = match.groupValues.getOrNull(1)?.trim()?.trimEnd(';', '.', ':', '-', ',') ?: ""
                 if (merchant.length <= 2) continue
 
                 // Clean up technical prefixes like NEFT Cr-IFSC- or IMPS-
@@ -303,8 +303,8 @@ object SmsParser {
                     candidates.add(match.range.first to merchant)
                 }
             }
-            // Optimization: If we find a high-priority merchant (first 5 patterns), we stop searching
-            if (candidates.isNotEmpty() && merchantPatterns.indexOf(pattern) < 5) break
+            // Optimization: If we find a high-priority merchant (first 6 patterns), we stop searching
+            if (candidates.isNotEmpty() && merchantPatterns.indexOf(pattern) < 6) break
         }
 
         if (candidates.isNotEmpty()) {
