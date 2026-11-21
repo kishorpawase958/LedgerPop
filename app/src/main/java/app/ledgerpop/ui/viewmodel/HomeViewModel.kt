@@ -107,47 +107,51 @@ class HomeViewModel(
                 val expense = billable.filter { it.type == "DEBIT" }.sumOf { it.amount }
 
                 val cal = Calendar.getInstance()
-                val thisMonth = cal.get(Calendar.MONTH)
                 val thisYear = cal.get(Calendar.YEAR)
-                cal.add(Calendar.MONTH, -1)
-                val lastMonth = cal.get(Calendar.MONTH)
-                val lastYear = cal.get(Calendar.YEAR)
+                val thisMonth = cal.get(Calendar.MONTH)
 
-                fun txnMonth(txn: SmsTransactionEntity): Int {
-                    val c = Calendar.getInstance()
-                    c.timeInMillis = txn.transactionTime
-                    return c.get(Calendar.MONTH)
+                // Compute exact millisecond boundaries for this month and last month
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val thisMonthStart = cal.timeInMillis
+
+                cal.add(Calendar.MONTH, 1)
+                val nextMonthStart = cal.timeInMillis
+
+                cal.add(Calendar.MONTH, -2)
+                val lastMonthStart = cal.timeInMillis
+
+                var thisMonthIncome = 0.0
+                var thisMonthExpense = 0.0
+                var lastMonthExpense = 0.0
+                var lastMonthIncome = 0.0
+                var thisMonthInvestment = 0.0
+                val thisMonthDebits = mutableListOf<SmsTransactionEntity>()
+
+                for (txn in billable) {
+                    val t = txn.transactionTime
+                    val isThisMonth = t in thisMonthStart until nextMonthStart
+                    val isLastMonth = t in lastMonthStart until thisMonthStart
+
+                    if (txn.type == "CREDIT") {
+                        if (isThisMonth) thisMonthIncome += txn.amount
+                        if (isLastMonth) lastMonthIncome += txn.amount
+                    } else if (txn.type == "DEBIT") {
+                        if (isThisMonth) {
+                            thisMonthExpense += txn.amount
+                            thisMonthDebits.add(txn)
+                            if (txn.category == "Investments") {
+                                thisMonthInvestment += txn.amount
+                            }
+                        }
+                        if (isLastMonth) {
+                            lastMonthExpense += txn.amount
+                        }
+                    }
                 }
-
-                fun txnYear(txn: SmsTransactionEntity): Int {
-                    val c = Calendar.getInstance()
-                    c.timeInMillis = txn.transactionTime
-                    return c.get(Calendar.YEAR)
-                }
-
-                val thisMonthIncome = billable
-                    .filter { it.type == "CREDIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear }
-                    .sumOf { it.amount }
-
-                val thisMonthExpense = billable
-                    .filter { it.type == "DEBIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear }
-                    .sumOf { it.amount }
-
-                val lastMonthExpense = billable
-                    .filter { it.type == "DEBIT" && txnMonth(it) == lastMonth && txnYear(it) == lastYear }
-                    .sumOf { it.amount }
-
-                val lastMonthIncome = billable
-                    .filter { it.type == "CREDIT" && txnMonth(it) == lastMonth && txnYear(it) == lastYear }
-                    .sumOf { it.amount }
-
-                val thisMonthDebits = billable.filter {
-                    it.type == "DEBIT" && txnMonth(it) == thisMonth && txnYear(it) == thisYear
-                }
-
-                val thisMonthInvestment = billable
-                    .filter { it.type == "DEBIT" && it.category == "Investments" && txnMonth(it) == thisMonth && txnYear(it) == thisYear }
-                    .sumOf { it.amount }
 
                 val topCategories = thisMonthDebits
                     .groupBy { it.category }

@@ -1,0 +1,10 @@
+- [x] Update `SmsParser.kt` logic
+    - [x] Improve date regex for compact dates
+    - [x] Refine junk filter for URL fragments and digits
+    - [x] Adjust merchant extraction triggers
+- [/] Refine `SmsParser.kt` for D-Mart and Axis cases (Iteration 2)
+    - [ ] Relax `on` trigger for leading digits
+    - [ ] Fix institutional ID parsing for Axis
+    - [ ] Block URL segments more strictly
+- [ ] Update `SmsParserTest.kt` with exact expected merchants
+- [ ] Verify manually on emulator

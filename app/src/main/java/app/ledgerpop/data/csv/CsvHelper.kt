@@ -42,8 +42,8 @@ object CsvHelper {
                     val account = "\"${txn.accountHint.replace("\"", "\"\"")}\""
                     val category = "\"${txn.category.replace("\"", "\"\"")}\""
 
-                    // Fixed: Using 'note' instead of 'notes'
-                    val noteStr = txn.note ?: ""
+                    // Using non-nullable note
+                    val noteStr = txn.note
                     val note = "\"${noteStr.replace("\"", "\"\"")}\""
 
                     writer.write("$date,$time,$merchant,${txn.amount},$drCr,$account,$expenseFlag,$incomeFlag,$category,$note\n")
@@ -180,25 +180,5 @@ object CsvHelper {
             }
         }
         return result
-    }
-
-    // Handles commas inside quoted strings
-    private fun parseCsvLine(line: String): List<String> {
-        val result = mutableListOf<String>()
-        var currentToken = StringBuilder()
-        var inQuotes = false
-
-        for (char in line) {
-            if (char == '\"') {
-                inQuotes = !inQuotes
-            } else if (char == ',' && !inQuotes) {
-                result.add(currentToken.toString())
-                currentToken = StringBuilder()
-            } else {
-                currentToken.append(char)
-            }
-        }
-        result.add(currentToken.toString())
-        return result.map { it.trim() }
     }
 }

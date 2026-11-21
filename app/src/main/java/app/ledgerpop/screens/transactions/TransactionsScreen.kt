@@ -480,6 +480,13 @@ fun TransactionsScreen(
                 val showMonthlyGroups = uiState.selectedSortOrder == TransactionSortOrder.DATE_DESC || 
                                        uiState.selectedSortOrder == TransactionSortOrder.DATE_ASC
 
+                val linkedAmountsMap = remember(uiState.allTransactions) {
+                    uiState.allTransactions.asSequence()
+                        .filter { it.linkedTransactionId != null }
+                        .groupBy { it.linkedTransactionId!! }
+                        .mapValues { (_, credits) -> credits.sumOf { it.amount } }
+                }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -488,14 +495,15 @@ fun TransactionsScreen(
                     if (!showMonthlyGroups) {
                         items(
                             items = filtered,
-                            key = { it.id }
+                            key = { it.id },
+                            contentType = { "transaction" }
                         ) { txn ->
                             TransactionRow(
                                 txn = txn,
                                 isSelected = selectedIds.contains(txn.id),
                                 isSelectionMode = selectedIds.isNotEmpty(),
                                 customCategories = uiState.customCategories,
-                                allTransactions = uiState.allTransactions,
+                                linkedAmount = linkedAmountsMap[txn.id] ?: 0.0,
                                 onClick = onTransactionClick,
                                 onLongClick = onTransactionLongClick,
                                 onCategoryClick = onQuickCategoryClick
@@ -503,7 +511,7 @@ fun TransactionsScreen(
                         }
                     } else {
                         groupedTransactions.forEach { (month, transactions) ->
-                            item(key = month) {
+                            item(key = month, contentType = "month_header") {
                                 Text(
                                     text = month,
                                     style = MaterialTheme.typography.labelMedium,
@@ -516,14 +524,15 @@ fun TransactionsScreen(
 
                             items(
                                 items = transactions,
-                                key = { it.id }
+                                key = { it.id },
+                                contentType = { "transaction" }
                             ) { txn ->
                                 TransactionRow(
                                     txn = txn,
                                     isSelected = selectedIds.contains(txn.id),
                                     isSelectionMode = selectedIds.isNotEmpty(),
                                     customCategories = uiState.customCategories,
-                                    allTransactions = uiState.allTransactions,
+                                    linkedAmount = linkedAmountsMap[txn.id] ?: 0.0,
                                     onClick = onTransactionClick,
                                     onLongClick = onTransactionLongClick,
                                     onCategoryClick = onQuickCategoryClick
@@ -947,7 +956,7 @@ private fun TransactionRow(
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     customCategories: List<CustomCategoryEntity> = emptyList(),
-    allTransactions: List<SmsTransactionEntity> = emptyList(),
+    linkedAmount: Double = 0.0,
     onClick: (SmsTransactionEntity) -> Unit,
     onLongClick: (SmsTransactionEntity) -> Unit,
     onCategoryClick: (SmsTransactionEntity) -> Unit
@@ -963,15 +972,7 @@ private fun TransactionRow(
         transactionDateFormatter.format(Date(txn.transactionTime))
     }
 
-    val linkedAmount = remember(txn, allTransactions) {
-        if (isDebit) {
-            allTransactions.filter { it.linkedTransactionId == txn.id }.sumOf { it.amount }
-        } else 0.0
-    }
-    val hasLinks = remember(txn, allTransactions) {
-        if (isDebit) linkedAmount > 0
-        else txn.linkedTransactionId != null
-    }
+    val hasLinks = if (isDebit) linkedAmount > 0 else txn.linkedTransactionId != null
 
     Row(
         modifier = Modifier

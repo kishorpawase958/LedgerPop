@@ -29,23 +29,29 @@ open class CombinedSpendsWidget : AppWidgetProvider() {
 
         scope.launch {
             try {
-                val all = dao.getAllTransactionsSync()
-                val billable = all.filter { it.isBillable && it.type == "DEBIT" }
+                val cal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val startOfToday = cal.timeInMillis
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                val endOfToday = cal.timeInMillis
 
-                val cal = Calendar.getInstance()
-                val currentYear = cal.get(Calendar.YEAR)
-                val currentMonth = cal.get(Calendar.MONTH)
-                val currentDay = cal.get(Calendar.DAY_OF_YEAR)
+                val monthCal = Calendar.getInstance().apply {
+                    set(Calendar.DAY_OF_MONTH, 1)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val startOfMonth = monthCal.timeInMillis
+                monthCal.add(Calendar.MONTH, 1)
+                val endOfMonth = monthCal.timeInMillis
 
-                val today = billable.filter {
-                    val c = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                    c.get(Calendar.YEAR) == currentYear && c.get(Calendar.DAY_OF_YEAR) == currentDay
-                }.sumOf { it.amount }
-
-                val month = billable.filter {
-                    val c = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                    c.get(Calendar.YEAR) == currentYear && c.get(Calendar.MONTH) == currentMonth
-                }.sumOf { it.amount }
+                val today = dao.getSpendsBetween(startOfToday, endOfToday)
+                val month = dao.getSpendsBetween(startOfMonth, endOfMonth)
 
                 withContext(Dispatchers.Main) {
                     for (appWidgetId in appWidgetIds) {

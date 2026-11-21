@@ -79,8 +79,14 @@ class AnalyticsViewModel(
     ) { allTxns, customCategories, f ->
         val billableTxns = allTxns.filter { it.isBillable }
         
-        val cats = listOf("All") + billableTxns.map { CategoryEngine.normalize(it.category) }.distinct().sorted()
-        val accs = listOf("All") + billableTxns.map { it.accountHint.ifBlank { "Unknown" } }.distinct().sorted()
+        val cats = buildSet {
+            add("All")
+            billableTxns.forEach { add(CategoryEngine.normalize(it.category)) }
+        }.sorted()
+        val accs = buildSet {
+            add("All")
+            billableTxns.forEach { add(it.accountHint.ifBlank { "Unknown" }) }
+        }.sorted()
 
         var baseFiltered = billableTxns
         if (f.start != null) baseFiltered = baseFiltered.filter { it.transactionTime >= f.start }
@@ -95,43 +101,50 @@ class AnalyticsViewModel(
             val matchesAccount = f.accounts.contains("All") || f.accounts.contains(txn.accountHint.ifBlank { "Unknown" })
             matchesCategory && matchesAccount
         }
-        val trendSummaries = trendBase
-            .groupBy {
-                val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                trendFormat.format(cal.time)
-            }
+        val trendSummaries = trendBase.asSequence()
+            .groupBy { trendFormat.format(Date(it.transactionTime)) }
             .map { (label, txns) -> label to txns }
             .sortedBy { (_, txns) -> txns.minOf { it.transactionTime } }
             .map { (label, txns) ->
-                TrendSummary(
-                    label = label,
-                    income = txns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount },
-                    expense = txns.filter { it.type == "DEBIT" }.sumOf { it.amount }
-                )
+                var inc = 0.0
+                var exp = 0.0
+                for (t in txns) {
+                    if (t.type == "CREDIT" && t.linkedTransactionId == null) inc += t.amount
+                    else if (t.type == "DEBIT") exp += t.amount
+                }
+                TrendSummary(label = label, income = inc, expense = exp)
             }
 
         val filteredTxns = if (f.month == null) {
             baseFiltered
         } else {
             baseFiltered.filter {
-                val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                trendFormat.format(cal.time) == f.month
+                trendFormat.format(Date(it.transactionTime)) == f.month
             }
         }
 
-        val income = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount }
-        val expense = filteredTxns.filter { it.type == "DEBIT" }.sumOf { it.amount }
+        val debits = mutableListOf<SmsTransactionEntity>()
+        val credits = mutableListOf<SmsTransactionEntity>()
+        var income = 0.0
+        var expense = 0.0
+
+        for (txn in filteredTxns) {
+            if (txn.type == "DEBIT") {
+                debits.add(txn)
+                expense += txn.amount
+            } else if (txn.type == "CREDIT" && txn.linkedTransactionId == null) {
+                credits.add(txn)
+                income += txn.amount
+            }
+        }
+        val avgDebit = if (debits.isNotEmpty()) expense / debits.size else 0.0
+        val avgCredit = if (credits.isNotEmpty()) income / credits.size else 0.0
 
         val effectiveViewType = when {
             expense > 0 && income == 0.0 -> AnalyticsViewType.SPENDS
             income > 0 && expense == 0.0 -> AnalyticsViewType.INCOME
             else -> f.viewType
         }
-
-        val debits = filteredTxns.filter { it.type == "DEBIT" }
-        val credits = filteredTxns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }
-        val avgDebit = if (debits.isNotEmpty()) expense / debits.size else 0.0
-        val avgCredit = if (credits.isNotEmpty()) income / credits.size else 0.0
 
         val categoryBreakdown = if (effectiveViewType == AnalyticsViewType.SPENDS) {
             debits
@@ -250,8 +263,7 @@ class AnalyticsViewModel(
                     val matchesCategory = f.categories.contains("All") || f.categories.contains(CategoryEngine.normalize(it.category))
                     val matchesAccount = f.accounts.contains("All") || f.accounts.contains(it.accountHint.ifBlank { "Unknown" })
                     if (matchesCategory && matchesAccount) {
-                        val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                        trendFormat.format(cal.time) == drillDown.label
+                        trendFormat.format(Date(it.transactionTime)) == drillDown.label
                     } else false
                 }
             }

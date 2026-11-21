@@ -7,7 +7,12 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "sms_transactions",
-    indices = [Index(value = ["hashKey"], unique = true)],
+    indices = [
+        Index(value = ["hashKey"], unique = true),
+        Index(value = ["transactionTime"]),
+        Index(value = ["linkedTransactionId"]),
+        Index(value = ["isBillable", "type", "transactionTime"])
+    ],
     foreignKeys = [
         ForeignKey(
             entity = SmsTransactionEntity::class,

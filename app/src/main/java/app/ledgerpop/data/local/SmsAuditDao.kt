@@ -73,4 +73,7 @@ interface SmsAuditDao {
 
     @Query("SELECT * FROM sms_audit WHERE LOWER(body) LIKE '%' || LOWER(:keyword) || '%' ORDER BY timestamp DESC")
     suspend fun getAuditEntriesMatchingKeyword(keyword: String): List<SmsAuditEntity>
+
+    @Query("SELECT hashKey FROM sms_audit ORDER BY timestamp DESC LIMIT 1000")
+    suspend fun getRecentHashKeys(): List<String>
 }

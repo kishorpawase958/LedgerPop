@@ -138,4 +138,10 @@ interface SmsTransactionDao {
 
     @Query("SELECT * FROM sms_transactions WHERE LOWER(body) LIKE '%' || LOWER(:keyword) || '%' ORDER BY transactionTime DESC")
     suspend fun getTransactionsMatchingKeyword(keyword: String): List<SmsTransactionEntity>
+
+    @Query("SELECT hashKey FROM sms_transactions ORDER BY transactionTime DESC LIMIT 1000")
+    suspend fun getRecentHashKeys(): List<String>
+
+    @Query("SELECT COALESCE(SUM(amount), 0.0) FROM sms_transactions WHERE isBillable = 1 AND type = 'DEBIT' AND transactionTime >= :startTime AND transactionTime < :endTime")
+    suspend fun getSpendsBetween(startTime: Long, endTime: Long): Double
 }

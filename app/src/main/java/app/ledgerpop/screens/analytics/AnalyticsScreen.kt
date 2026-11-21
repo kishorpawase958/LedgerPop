@@ -331,7 +331,8 @@ fun AnalyticsScreen(
 
                 items(
                     items = breakdownItems,
-                    key = { it.category }
+                    key = { it.category },
+                    contentType = { "category_row" }
                 ) { summary ->
                     CategoryRow(
                         summary = summary,
@@ -527,7 +528,8 @@ fun AnalyticsScreen(
 
                             items(
                                 items = transactions,
-                                key = { it.id }
+                                key = { it.id },
+                                contentType = { "drilldown_transaction" }
                             ) { txn ->
                                 Box(
                                     modifier = Modifier

@@ -143,8 +143,7 @@ class TransactionsViewModel(
                 filteredWithDates
             } else {
                 filteredWithDates.filter {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                    monthFormat.format(cal.time) == f.month
+                    monthFormat.format(Date(it.transactionTime)) == f.month
                 }
             }.let { list ->
                 when (f.sortOrder) {
@@ -158,34 +157,32 @@ class TransactionsViewModel(
             }
 
             // Trend chart shows all historical data for the current search/category/account, ignoring date range filters
-            val trendSummaries = baseFiltered.filter { it.isBillable }
-                .groupBy {
-                    val cal = Calendar.getInstance().apply { timeInMillis = it.transactionTime }
-                    monthFormat.format(cal.time)
-                }
+            val trendSummaries = baseFiltered.asSequence()
+                .filter { it.isBillable }
+                .groupBy { monthFormat.format(Date(it.transactionTime)) }
                 .map { (label, txns) -> label to txns }
                 .sortedBy { (_, txns) -> txns.minOf { it.transactionTime } }
                 .map { (label, txns) ->
-                    TrendSummary(
-                        label = label,
-                        income = txns.filter { it.type == "CREDIT" && it.linkedTransactionId == null }.sumOf { it.amount },
-                        expense = txns.filter { it.type == "DEBIT" }.sumOf { it.amount }
-                    )
+                    var inc = 0.0
+                    var exp = 0.0
+                    for (t in txns) {
+                        if (t.type == "CREDIT" && t.linkedTransactionId == null) inc += t.amount
+                        else if (t.type == "DEBIT") exp += t.amount
+                    }
+                    TrendSummary(label = label, income = inc, expense = exp)
                 }
 
-            val availableCategories = (listOf("All") +
-                    transactions.map { it.category } +
-                    customCategories.map { it.name }
-                    ).filter { it.isNotBlank() }
-                .distinct()
-                .sorted()
+            val availableCategories = buildSet {
+                add("All")
+                transactions.forEach { if (it.category.isNotBlank()) add(it.category) }
+                customCategories.forEach { if (it.name.isNotBlank()) add(it.name) }
+            }.sorted()
 
-            val availableAccounts = (listOf("All") +
-                    transactions.map { it.accountHint } +
-                    accounts.map { it.name }
-                    ).filter { it.isNotBlank() }
-                .distinct()
-                .sorted()
+            val availableAccounts = buildSet {
+                add("All")
+                transactions.forEach { if (it.accountHint.isNotBlank()) add(it.accountHint) }
+                accounts.forEach { if (it.name.isNotBlank()) add(it.name) }
+            }.sorted()
 
             TransactionsUiState(
                 allTransactions = transactions,

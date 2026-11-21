@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SmartRuleEntity::class,
         SpamKeywordEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class LedgerPopDatabase : RoomDatabase() {
@@ -31,6 +31,14 @@ abstract class LedgerPopDatabase : RoomDatabase() {
     abstract fun spamKeywordDao(): SpamKeywordDao
 
     companion object {
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sms_transactions_transactionTime` ON `sms_transactions` (`transactionTime`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sms_transactions_linkedTransactionId` ON `sms_transactions` (`linkedTransactionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sms_transactions_isBillable_type_transactionTime` ON `sms_transactions` (`isBillable`, `type`, `transactionTime`)")
+            }
+        }
+
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
@@ -155,7 +163,7 @@ abstract class LedgerPopDatabase : RoomDatabase() {
                     LedgerPopDatabase::class.java,
                     "ledgerpop_db"
                 )
-                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }

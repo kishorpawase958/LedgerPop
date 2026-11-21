@@ -102,8 +102,8 @@ class SmsImporter(
         val customSpamKeywords = spamKeywordDao?.getAllKeywordStrings() ?: emptyList()
         
         // Pre-fetch recent audit hash keys to avoid duplicate checks in DB loop
-        val recentAuditHashes = auditDao.getAllSync().take(1000).map { it.hashKey }.toHashSet()
-        val recentTransactionHashes = dao.getAllTransactionsSync().take(1000).map { it.hashKey }.toHashSet()
+        val recentAuditHashes = auditDao.getRecentHashKeys().toHashSet()
+        val recentTransactionHashes = dao.getRecentHashKeys().toHashSet()
 
         val transactionsToInsert = mutableListOf<SmsTransactionEntity>()
         val auditToInsert = mutableListOf<SmsAuditEntity>()

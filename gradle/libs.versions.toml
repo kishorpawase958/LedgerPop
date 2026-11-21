@@ -14,6 +14,7 @@ ksp = "2.3.8"
 haze = "1.7.2"
 work = "2.11.2"
 documentfile = "1.1.0"
+foundation = "1.12.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,6 +38,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "foundation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -10,12 +10,28 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import app.ledgerpop.ui.state.AppTheme
+
+/**
+ * CompositionLocal providing whether the active app theme is dark.
+ */
+val LocalDarkTheme = compositionLocalOf<Boolean?> { null }
+
+/**
+ * Returns true if the current theme is dark, considering [LocalDarkTheme],
+ * [MaterialTheme] colorScheme surface luminance, or [isSystemInDarkTheme].
+ */
+@Composable
+fun isAppDarkTheme(): Boolean =
+    LocalDarkTheme.current ?: (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
 
 @Composable
 fun animateColorScheme(targetScheme: ColorScheme): ColorScheme {
@@ -150,9 +166,11 @@ fun LedgerPopTheme(
                 .isAppearanceLightStatusBars = !darkTheme
         }
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography  = LedgerPopTypography,
-        content     = content
-    )
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography  = LedgerPopTypography,
+            content     = content
+        )
+    }
 }

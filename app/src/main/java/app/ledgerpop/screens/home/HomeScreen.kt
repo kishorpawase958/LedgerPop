@@ -47,8 +47,6 @@ import app.ledgerpop.ui.viewmodel.CategoryAggregate
 import app.ledgerpop.ui.viewmodel.IncomeBenchmark
 import app.ledgerpop.ui.viewmodel.HomeViewModel
 import app.ledgerpop.utils.AmountUtils
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
 import androidx.compose.animation.*
 import app.ledgerpop.ui.components.rememberFloatingButtonTimerState
 import app.ledgerpop.ui.components.trackInteractionForFloatingButton
@@ -69,7 +67,6 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val isMidnight = MaterialTheme.colorScheme.primary == MidnightPrimary
     val accentColor = if (isMidnight) MaterialTheme.colorScheme.primaryContainer else Purple700
-    val hazeState = remember { HazeState() }
 
     val customCategories by produceState(initialValue = emptyList<CustomCategoryEntity>()) {
         db.customCategoryDao().getAllCategories().collect { value = it }
@@ -96,7 +93,6 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .trackInteractionForFloatingButton(fabTimerState)
-            .hazeSource(state = hazeState)
             .statusBarsPadding()
     ) {
         LazyColumn(
@@ -189,7 +185,11 @@ fun HomeScreen(
 
             val recentTransactions = uiState.recentTransactions.take(3)
             if (recentTransactions.isNotEmpty()) {
-                items(recentTransactions) { txn ->
+                items(
+                    items = recentTransactions,
+                    key = { it.id },
+                    contentType = { "home_transaction" }
+                ) { txn ->
                     HomeTransactionRow(
                         txn = txn,
                         customCategories = customCategories,
@@ -217,7 +217,7 @@ fun HomeScreen(
                 onClick = { showAddSheet = true },
                 containerColor = accentColor,
                 contentColor = Color.White,
-                shape = RoundedCornerShape(18.dp)
+                shape = CircleShape
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Add,
