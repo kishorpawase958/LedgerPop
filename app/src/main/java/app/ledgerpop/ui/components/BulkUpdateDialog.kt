@@ -28,7 +28,7 @@ fun BulkUpdateDialog(
     onDismiss: () -> Unit,
     onApply: (List<Int>, Boolean, Boolean, Boolean) -> Unit
 ) {
-    var selectedIds by remember { mutableStateOf(similarTransactions.map { it.id }.toSet()) }
+    var selectedIds by remember(similarTransactions) { mutableStateOf(similarTransactions.map { it.id }.toSet()) }
     var updateMerchant by remember { mutableStateOf(true) }
     var updateCategory by remember { mutableStateOf(true) }
     var updateBillable by remember { mutableStateOf(true) }
@@ -106,11 +106,34 @@ fun BulkUpdateDialog(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                Text(
-                    text = "Apply to selected items:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Apply to selected items:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    val allSelected = selectedIds.size == similarTransactions.size
+                    TextButton(
+                        onClick = {
+                            selectedIds = if (allSelected) {
+                                emptySet()
+                            } else {
+                                similarTransactions.map { it.id }.toSet()
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = if (allSelected) "Unselect All" else "Select All",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
                 
                 LazyColumn(
                     modifier = Modifier

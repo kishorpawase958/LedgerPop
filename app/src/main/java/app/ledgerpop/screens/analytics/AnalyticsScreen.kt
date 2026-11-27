@@ -313,19 +313,6 @@ fun AnalyticsScreen(
 
             // ── Category Breakdown (Clickable) ────────────────────────────────
             if (uiState.categoryBreakdown.isNotEmpty()) {
-                item {
-                    val breakdownTitle = if (uiState.viewType == app.ledgerpop.ui.state.AnalyticsViewType.SPENDS)
-                        "Spending by Category"
-                    else
-                        "Income by Category"
-
-                    Text(
-                        breakdownTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
-                }
 
                 val breakdownItems = if (isBreakdownExpanded.value) uiState.categoryBreakdown else uiState.categoryBreakdown.take(7)
 

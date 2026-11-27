@@ -104,12 +104,13 @@ fun ScrollableBarChart(
                     .padding(top = 16.dp, bottom = 24.dp)
             ) {
             val viewportWidth = with(density) { maxWidth.toPx() }
-            val itemWidthPx = with(density) { itemWidth.toPx() }
-            val spacingPx = with(density) { spacing.toPx() }
-            val totalItemStepPx = itemWidthPx + spacingPx
+            // Match Modifier.width() pixel rounding per item so Canvas never drifts from Row
+            val itemWidthPx = with(density) { itemWidth.roundToPx() }
+            val spacingPx = with(density) { spacing.roundToPx() }
+            val totalItemStepPx = (itemWidthPx + spacingPx).toFloat()
 
             // Dynamically calculate visible range and its max value for scaling
-            val visibleMax by remember(summaries) {
+            val visibleMax by remember(summaries, viewportWidth, totalItemStepPx) {
                 derivedStateOf {
                     val scrollX = scrollState.value.toFloat()
                     val startIndex = (scrollX / totalItemStepPx).toInt().coerceAtLeast(0)
@@ -137,7 +138,8 @@ fun ScrollableBarChart(
                     .horizontalScroll(scrollState)
                     .padding(horizontal = 16.dp)
             ) {
-                val totalWidth = if (summaries.isEmpty()) 0.dp else (itemWidth + spacing) * summaries.size - spacing
+                val totalWidthPx = if (summaries.isEmpty()) 0 else summaries.size * itemWidthPx + (summaries.size - 1) * spacingPx
+                val totalWidth = with(density) { totalWidthPx.toDp() }
                 
                 Canvas(
                     modifier = Modifier
@@ -150,7 +152,7 @@ fun ScrollableBarChart(
                     summaries.forEachIndexed { index, summary ->
                         val isSelected = summary.label == selectedMonth
                         val alpha = if (selectedMonth == null || isSelected) 1f else 0.4f
-                        val xCenter = index * (itemWidthPx + spacingPx) + itemWidthPx / 2
+                        val xCenter = index * totalItemStepPx + itemWidthPx / 2f
                         
                         // Debit Bar (Purple)
                         val expenseHeight = (summary.expense.toFloat() / chartMaxAmount) * canvasHeight
@@ -271,3 +273,5 @@ private fun ChartLegendItem(label: String, color: Color, isLine: Boolean) {
         )
     }
 }
+
+

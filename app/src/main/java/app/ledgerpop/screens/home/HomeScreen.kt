@@ -25,11 +25,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -40,9 +40,11 @@ import app.ledgerpop.data.local.SmsTransactionEntity
 import app.ledgerpop.screens.transactions.AddTransactionDialog
 import app.ledgerpop.screens.transactions.TransactionDetailScreen
 import app.ledgerpop.ui.components.BulkUpdateDialog
+import app.ledgerpop.ui.components.LiquidGlassSurface
 import app.ledgerpop.ui.components.SlidingToggle
 import app.ledgerpop.ui.theme.MidnightPrimary
 import app.ledgerpop.ui.theme.Purple700
+import app.ledgerpop.ui.theme.isAppDarkTheme
 import app.ledgerpop.ui.viewmodel.CategoryAggregate
 import app.ledgerpop.ui.viewmodel.IncomeBenchmark
 import app.ledgerpop.ui.viewmodel.HomeViewModel
@@ -492,21 +494,32 @@ private fun BalanceRingCard(
     )
 
     val redColor = Color(0xFFD63031)
-    val surfaceColor = MaterialTheme.colorScheme.surface
+    val isDark = isAppDarkTheme()
+    val textColor = if (isDark) Color.White else Color.Black
     var showBudgetDialog by remember { mutableStateOf(false) }
     var showBenchmarkMenu by remember { mutableStateOf(false) }
 
-    Surface(
+    val glassBg = if (isDark) {
+        accentColor.copy(alpha = 0.18f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+    }
+
+    val trackColor = if (isDark) {
+        Color.White.copy(alpha = 0.12f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    }
+
+    LiquidGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp),
         shape = RoundedCornerShape(24.dp),
-        color = surfaceColor,
-        tonalElevation = 2.dp,
-        border = BorderStroke(
-            1.dp,
-            accentColor.copy(alpha = 1f)
-        )
+        backgroundColor = glassBg,
+        tintColor = accentColor,
+        isDark = isDark,
+        elevation = if (isDark) 8.dp else 4.dp
     ) {
         Column(modifier = Modifier.padding(24.dp)) {
             Row(
@@ -527,10 +540,7 @@ private fun BalanceRingCard(
 
                             // 1. Background Track (Dynamic White/Black)
                             drawArc(
-                                color = if (surfaceColor.luminance() < 0.5f)
-                                    Color.White.copy(alpha = 0.08f)
-                                else
-                                    Color.Black.copy(alpha = 0.08f),
+                                color = trackColor,
                                 startAngle = 0f,
                                 sweepAngle = 360f,
                                 useCenter = false,
@@ -616,12 +626,14 @@ private fun BalanceRingCard(
                         Text(
                             text = if (totalBalance >= 0) "Available" else "Over",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = textColor,
+
                         )
                         Text(
                             text = if (isAggregated) AmountUtils.formatCompact(totalBalance) else AmountUtils.formatWithCurrency(totalBalance),
                             style = MaterialTheme.typography.headlineSmall,
-                            color = if (totalBalance < 0) redColor else MaterialTheme.colorScheme.onSurface
+                            color = if (totalBalance < 0) redColor else textColor,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -639,7 +651,7 @@ private fun BalanceRingCard(
                             Text(
                                 text = if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) "Income Last Month" else "Income this Month",
                                 style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = textColor,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
                                 modifier = Modifier.clickable { showBenchmarkMenu = true }
                             )
@@ -667,6 +679,7 @@ private fun BalanceRingCard(
                             if (isAggregated) AmountUtils.formatCompact(if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) lastMonthIncome else totalIncome) else AmountUtils.formatWithCurrency(if (incomeBenchmark == IncomeBenchmark.PREVIOUS_MONTH) lastMonthIncome else totalIncome),
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color(0xFF00B894),
+                            fontWeight = FontWeight.Bold,
                             textAlign = androidx.compose.ui.text.style.TextAlign.End
                         )
                     }
@@ -675,12 +688,13 @@ private fun BalanceRingCard(
                         Text(
                             "Spent this Month",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = textColor,
                         )
                         Text(
                             if (isAggregated) AmountUtils.formatCompact(totalExpense) else AmountUtils.formatWithCurrency(totalExpense),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = textColor,
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
@@ -688,7 +702,7 @@ private fun BalanceRingCard(
                         Text(
                             "Monthly Budget",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = textColor,
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(

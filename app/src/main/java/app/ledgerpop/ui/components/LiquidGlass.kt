@@ -4,10 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
@@ -16,6 +21,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.ledgerpop.ui.theme.isAppDarkTheme
@@ -34,14 +40,16 @@ val LocalHazeState = compositionLocalOf<HazeState?> { null }
  * Visual layers:
  * 1. Crisp ambient depth shadow
  * 2. Crystal-clear minimal haze blur with subtle tint
- * 3. Curved glossy lens glare (specular horizon gradient)
- * 4. Razor-sharp prismatic glass rim border
+ * 3. Base background color tint (if specified)
+ * 4. Curved glossy lens glare (specular horizon gradient)
+ * 5. Razor-sharp prismatic glass rim border
  *
  * @param hazeState Optional [HazeState] used to blur content behind the glass. Defaults to [LocalHazeState].
  * @param shape The shape of the glass element (e.g. [CircleShape], [RoundedCornerShape]).
  * @param elevation Elevation for the ambient depth shadow. Pass 0.dp to disable shadow.
  * @param blurRadius The blur radius for the haze effect.
  * @param tintColor Accent color used in the specular glare and bottom refraction highlight.
+ * @param backgroundColor Optional explicit background color applied over the haze blur layer.
  * @param isDark Whether to render dark mode glass parameters. Defaults to [isAppDarkTheme].
  * @param borderWidth Width of the prismatic glass rim border.
  */
@@ -52,18 +60,19 @@ fun Modifier.liquidGlass(
     elevation: Dp = 12.dp,
     blurRadius: Dp = 15.dp,
     tintColor: Color = MaterialTheme.colorScheme.primary,
+    backgroundColor: Color = Color.Transparent,
     isDark: Boolean = isAppDarkTheme(),
     borderWidth: Dp = 1.dp
 ): Modifier {
-    val ambientAlpha = if (isDark) 0.35f else 0.12f
-    val spotAlpha = if (isDark) 0.45f else 0.18f
-    val hazeTint = if (isDark) Color.Black.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.08f)
-    val glareTop = tintColor.copy(alpha = if (isDark) 0.35f else 0.15f)
-    val glareFalloff = Color.White.copy(alpha = if (isDark) 0.10f else 0.15f)
-    val glareBottom = tintColor.copy(alpha = if (isDark) 0.10f else 0.10f)
-    val rimTop = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.35f else 0.15f)
-    val rimFalloff = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.15f else 0.15f)
-    val rimBottom = tintColor.copy(alpha = if (isDark) 0.15f else 0.15f)
+    val ambientAlpha = if (isDark) 0.35f else 0.08f
+    val spotAlpha = if (isDark) 0.45f else 0.12f
+    val hazeTint = if (isDark) Color.Black.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.12f)
+    val glareTop = tintColor.copy(alpha = if (isDark) 0.15f else 0.12f)
+    val glareMid = tintColor.copy(alpha = if (isDark) 0.06f else 0.04f)
+    val glareBottom = tintColor.copy(alpha = if (isDark) 0.04f else 0.02f)
+    val rimTop = if (isDark) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.40f)
+    val rimMiddle = tintColor.copy(alpha = if (isDark) 0.15f else 0.25f)
+    val rimBottom = tintColor.copy(alpha = if (isDark) 0.08f else 0.15f)
 
     return this
         // 1. Crisp ambient depth shadow
@@ -92,28 +101,33 @@ fun Modifier.liquidGlass(
                 )
             } else {
                 Modifier.background(
-                    if (isDark) Color.Black.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.35f)
+                    if (backgroundColor != Color.Transparent) backgroundColor
+                    else if (isDark) Color.Black.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.35f)
                 )
             }
         )
-        // 3. Curved Glossy Lens Glare (Specular Horizon)
+        // 3. Base background color if specified
+        .then(
+            if (backgroundColor != Color.Transparent) {
+                Modifier.background(backgroundColor)
+            } else Modifier
+        )
+        // 4. Curved Glossy Lens Glare (Specular Horizon)
         .background(
             Brush.verticalGradient(
                 0.0f to glareTop,
-                0.05f to glareFalloff,
-                0.48f to Color.Transparent,
-                0.85f to Color.Transparent,
-                1f to glareBottom
+                0.25f to glareMid,
+                0.60f to Color.Transparent,
+                1.0f to glareBottom
             )
         )
-        // 4. Razor-sharp Prismatic Glass Rim
+        // 5. Razor-sharp Prismatic Glass Rim
         .border(
             width = borderWidth,
             brush = Brush.verticalGradient(
                 0.0f to rimTop,
-                0.35f to rimFalloff,
-                0.55f to MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                0.5f to rimBottom
+                0.40f to rimMiddle,
+                1.0f to rimBottom
             ),
             shape = shape
         )
@@ -176,6 +190,7 @@ fun LiquidGlassSurface(
     elevation: Dp = 12.dp,
     blurRadius: Dp = 15.dp,
     tintColor: Color = MaterialTheme.colorScheme.primary,
+    backgroundColor: Color = Color.Transparent,
     isDark: Boolean = isAppDarkTheme(),
     borderWidth: Dp = 1.dp,
     content: @Composable () -> Unit
@@ -187,6 +202,7 @@ fun LiquidGlassSurface(
             elevation = elevation,
             blurRadius = blurRadius,
             tintColor = tintColor,
+            backgroundColor = backgroundColor,
             isDark = isDark,
             borderWidth = borderWidth
         ),
@@ -208,6 +224,7 @@ fun LiquidGlassBox(
     elevation: Dp = 12.dp,
     blurRadius: Dp = 15.dp,
     tintColor: Color = MaterialTheme.colorScheme.primary,
+    backgroundColor: Color = Color.Transparent,
     isDark: Boolean = isAppDarkTheme(),
     borderWidth: Dp = 1.dp,
     content: @Composable BoxScope.() -> Unit
@@ -219,9 +236,40 @@ fun LiquidGlassBox(
             elevation = elevation,
             blurRadius = blurRadius,
             tintColor = tintColor,
+            backgroundColor = backgroundColor,
             isDark = isDark,
             borderWidth = borderWidth
         ),
         content = content
     )
 }
+
+@Preview
+@Composable
+private fun LiquidGlassCardPreview() {
+    MaterialTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F0F13))
+                .padding(24.dp)
+        ) {
+            LiquidGlassBox(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                shape = RoundedCornerShape(24.dp),
+                isDark = true,
+                tintColor = Color(0xFF6B4EE6),
+                backgroundColor = Color(0xFF6B4EE6).copy(alpha = 0.10f)
+            ) {
+                Text(
+                    text = "Balance Ring Card Preview",
+                    color = Color.White,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+    }
+}
+

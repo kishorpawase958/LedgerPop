@@ -24,6 +24,7 @@ fun GlassCard(
     elevation: Dp = 8.dp,
     blurRadius: Dp = 15.dp,
     tintColor: Color = MaterialTheme.colorScheme.primary,
+    backgroundColor: Color = Color.Transparent,
     isDark: Boolean = isAppDarkTheme(),
     borderWidth: Dp = 1.dp,
     content: @Composable () -> Unit
@@ -35,6 +36,7 @@ fun GlassCard(
         elevation = elevation,
         blurRadius = blurRadius,
         tintColor = tintColor,
+        backgroundColor = backgroundColor,
         isDark = isDark,
         borderWidth = borderWidth,
         content = content
